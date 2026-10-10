@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 功能库共用按钮、无障碍预览描述与路由失败提示；A/B 产品文案由宿主动态注入。 -->
 <resources>
     <string name="guide_preview_description">小组件预览</string>
     <string name="guide_add_desktop">添加到桌面</string>

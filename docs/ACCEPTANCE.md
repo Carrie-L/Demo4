@@ -1,5 +1,7 @@
 # 验收清单
 
+完整架构、字段字典和设计取舍见 [系统设计文档](SYSTEM_DESIGN.md)。
+
 ## 自动化
 
 `./gradlew :widget-guide:testDebugUnitTest :app:assembleDebug :app:lintDebug :widget-guide:lintDebug`

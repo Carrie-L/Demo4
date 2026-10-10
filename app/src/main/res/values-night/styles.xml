@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 深色模式主题资源；与浅色主题保持一致的组件与窗口约定。 -->
 <resources>
     <style name="Theme.WidgetGuide" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="colorPrimary">#78BFAE</item>

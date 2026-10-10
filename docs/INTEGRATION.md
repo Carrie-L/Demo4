@@ -1,5 +1,7 @@
 # 正式项目接入
 
+完整架构、字段字典和设计取舍见 [系统设计文档](SYSTEM_DESIGN.md)。
+
 ## 生命周期和线程
 
 进程内创建一个 `PersistentGuideRepository` 和一个 `WidgetGuideController`。Controller 由 Application 级容器持有，不要跟随某个 Fragment 重建。所有公开入口与 Host 回调从主线程调用；repository 内部会切换 IO。不要把 Activity 存入应用单例之外的长期静态字段；宿主销毁调用 `detach(host)`。

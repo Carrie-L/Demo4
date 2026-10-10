@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 旧备份规则：排除 browser_widget_guide.xml，避免重装后恢复历史频控。正式项目可只排除此文件。 -->
 <full-backup-content>
     <exclude domain="sharedpref" path="browser_widget_guide.xml" />
 </full-backup-content>

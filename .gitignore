@@ -1,3 +1,4 @@
+# 忽略本机 SDK 路径、IDE/Gradle 缓存和构建产物，不提交个人环境或生成文件。
 .gradle/
 .kotlin/
 .idea/

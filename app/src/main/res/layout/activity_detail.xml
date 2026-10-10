@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 通用业务页验证布局：支持插入任意中间跳转，验证未完成搜索链路与已完成行为的不同保留规则。 -->
 <ScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -9,6 +10,7 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:padding="20dp">
+        <!-- 根据 PageKind 展示当前业务页名称。 -->
         <TextView
             android:id="@+id/page_title"
             android:layout_width="match_parent"
@@ -24,30 +26,35 @@
             android:text="@string/detail_help"
             android:textSize="16sp"
             android:layout_marginBottom="12dp" />
+        <!-- 普通来源进入激活页，默认 OTHER，不能伪造首页搜索来源。 -->
         <Button
             android:id="@+id/to_search_active"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:minHeight="48dp"
             android:text="@string/go_search_active" />
+        <!-- 激活页使用 SEARCH_SUBMIT；其余来源仅作为普通导航。 -->
         <Button
             android:id="@+id/to_results"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:minHeight="48dp"
             android:text="@string/go_results" />
+        <!-- 插入其他业务页，验证绕行会切断未完成搜索链路。 -->
         <Button
             android:id="@+id/to_other"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:minHeight="48dp"
             android:text="@string/go_other" />
+        <!-- 清除上方验证页面，返回原主页面与原选中位置。 -->
         <Button
             android:id="@+id/return_main"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:minHeight="48dp"
             android:text="@string/return_main" />
+        <!-- 返回上一页面，页面恢复时由生命周期报告 visible。 -->
         <Button
             android:id="@+id/back"
             android:layout_width="match_parent"

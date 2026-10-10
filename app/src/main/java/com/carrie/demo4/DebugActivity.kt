@@ -10,9 +10,19 @@ import com.carrie.widgetguide.core.*
 import kotlinx.coroutines.launch
 import java.time.Instant
 
+/**
+ * 开发验证面板：修改内存云配、前进测试时钟、显式清空测试状态。
+ * 入口和 Activity 双重限制为 Debug，正式产品不能提供清除频控的业务入口。
+ */
 @Route(path = "/debug/guide")
 class DebugActivity : AppCompatActivity() {
+    /**
+     * 读取最新应用级依赖；重置会替换 controller。
+     */
     private val app get() = application as GuideApplication
+    /**
+     * 绑定调试操作，非 Debug 立即退出；非法间隔不更新当前配置。
+     */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (!BuildConfig.DEBUG) { finish(); return }
@@ -22,6 +32,9 @@ class DebugActivity : AppCompatActivity() {
         binding.enablePop.isChecked = config.enablePop
         binding.firstInterval.setText(config.firstPopInterval.toString())
         binding.secondInterval.setText(config.secondPopInterval.toString())
+        /**
+         * 展示注入时钟的当前时间，帮助验证冷却与自然日限制。
+         */
         fun updateTime() { binding.testTime.text = Instant.ofEpochMilli(app.clock.now().millis).atZone(app.clock.now().zone).toString() }
         updateTime()
         binding.applyConfig.setOnClickListener {
@@ -46,6 +59,9 @@ class DebugActivity : AppCompatActivity() {
         }
         binding.back.setOnClickListener { finish() }
     }
+    /**
+     * 将调试页作为 OTHER 上报，以正确切断未完成搜索链路。
+     */
     override fun onResume() {
         super.onResume()
         if (BuildConfig.DEBUG) app.controller.visible(PageRef("debug", PageKind.OTHER))

@@ -2,6 +2,10 @@
 
 Kotlin + XML 小组件添加引导。`widget-guide` 是可迁移功能模块；`app` 是真实导航验证宿主，使用 ARouter。
 
+## 设计与代码阅读
+
+先读 [完整系统设计文档](docs/SYSTEM_DESIGN.md)，其中第 4 节逐项解释 NavigationEvent、PageRef、EntryPoint 和 ARouter 参数，第 7/8 节解释展示协调、计数与失败恢复。自写源码、测试、XML 和关键构建配置已补充中文注释。
+
 ## 构建
 
 - JDK 17，Android SDK 35；Gradle Wrapper 8.11.1，AGP 8.9.2，Kotlin 2.1.20。

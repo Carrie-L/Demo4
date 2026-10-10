@@ -1,1 +1,2 @@
+<!-- 功能库不声明 Activity、Service 或组件提供者；由宿主注入展示与导航能力。 -->
 <manifest />

@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 主页面验证布局：首页/我的共用 Activity，首页另有频道。按钮只发起业务导航，频控由 Controller 负责。 -->
 <ScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -22,6 +23,7 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:baselineAligned="false">
+            <!-- 底部首页入口；点击后重新上报逻辑页面及宿主快照。 -->
             <Button
                 android:id="@+id/home_tab"
                 android:layout_width="0dp"
@@ -29,6 +31,7 @@
                 android:layout_height="wrap_content"
                 android:minHeight="48dp"
                 android:text="@string/home" />
+            <!-- 底部我的入口；与首页共用 Activity，但行为资格独立。 -->
             <Button
                 android:id="@+id/mine_tab"
                 android:layout_width="0dp"
@@ -37,6 +40,7 @@
                 android:minHeight="48dp"
                 android:text="@string/mine" />
         </LinearLayout>
+        <!-- 首页频道和行为入口容器，与我的容器按当前底部位置互斥显示。 -->
         <LinearLayout
             android:id="@+id/home_content"
             android:layout_width="match_parent"
@@ -47,6 +51,7 @@
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:baselineAligned="false">
+                <!-- 频道下标 0：默认推荐频道，显示搜索入口。 -->
                 <Button
                     android:id="@+id/recommend_channel"
                     android:layout_width="0dp"
@@ -54,6 +59,7 @@
                     android:layout_height="wrap_content"
                     android:minHeight="48dp"
                     android:text="@string/recommend" />
+                <!-- 频道下标 1：AI 快看，只有这里可展示 B。 -->
                 <Button
                     android:id="@+id/ai_channel"
                     android:layout_width="0dp"
@@ -61,6 +67,7 @@
                     android:layout_height="wrap_content"
                     android:minHeight="48dp"
                     android:text="@string/ai" />
+                <!-- 频道下标 2：体育，归类 HOME_OTHER。 -->
                 <Button
                     android:id="@+id/sports_channel"
                     android:layout_width="0dp"
@@ -68,6 +75,7 @@
                     android:layout_height="wrap_content"
                     android:minHeight="48dp"
                     android:text="@string/sports" />
+                <!-- 频道下标 3：地区，归类 HOME_OTHER。 -->
                 <Button
                     android:id="@+id/local_channel"
                     android:layout_width="0dp"
@@ -76,6 +84,7 @@
                     android:minHeight="48dp"
                     android:text="@string/local" />
             </LinearLayout>
+            <!-- 当前首页频道名称，跟随频道选中状态更新。 -->
             <TextView
                 android:id="@+id/channel_name"
                 android:layout_width="match_parent"
@@ -83,18 +92,21 @@
                 android:text="@string/recommend"
                 android:textSize="16sp"
                 android:layout_marginBottom="12dp" />
+            <!-- 首页搜索框入口：先进入搜索激活页，结果出现前不算完成行为。 -->
             <Button
                 android:id="@+id/search_box"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:minHeight="48dp"
                 android:text="@string/search_box" />
+            <!-- 首页直接搜索入口：直接进入搜索结果页。 -->
             <Button
                 android:id="@+id/direct_search"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:minHeight="48dp"
                 android:text="@string/direct_search" />
+            <!-- 资讯入口：AI 频道使用 AI_ARTICLE，其余频道使用 OTHER。 -->
             <Button
                 android:id="@+id/news_card"
                 android:layout_width="match_parent"
@@ -102,23 +114,27 @@
                 android:minHeight="48dp"
                 android:text="@string/regular_article" />
         </LinearLayout>
+        <!-- 我的工具入口容器，只能在我的页触发 MINE_TOOL。 -->
         <LinearLayout
             android:id="@+id/mine_content"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical">
+            <!-- 我的页书签入口，合法目标为 BOOKMARKS。 -->
             <Button
                 android:id="@+id/bookmarks"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:minHeight="48dp"
                 android:text="@string/bookmarks" />
+            <!-- 我的页历史入口，合法目标为 HISTORY。 -->
             <Button
                 android:id="@+id/history"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:minHeight="48dp"
                 android:text="@string/history" />
+            <!-- 我的页下载入口，合法目标为 DOWNLOADS。 -->
             <Button
                 android:id="@+id/downloads"
                 android:layout_width="match_parent"
@@ -126,18 +142,21 @@
                 android:minHeight="48dp"
                 android:text="@string/downloads" />
         </LinearLayout>
+        <!-- 打开设置页，提供不受自动频控影响的手动添加入口。 -->
         <Button
             android:id="@+id/settings"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:minHeight="48dp"
             android:text="@string/settings" />
+        <!-- 仅 Debug 展示的配置/时间/状态重置入口。 -->
         <Button
             android:id="@+id/debug_panel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:minHeight="48dp"
             android:text="@string/debug_panel" />
+        <!-- 仅 Debug 显示当前次数、已满足行为与诊断原因。 -->
         <TextView
             android:id="@+id/guide_status"
             android:layout_width="match_parent"

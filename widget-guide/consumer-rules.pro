@@ -1,1 +1,1 @@
-# No reflection-based serialization. No library-specific keep rules are needed.
+# 库使用显式 JSON 编解码，没有依赖反射字段名，不需要额外序列化 keep 规则。

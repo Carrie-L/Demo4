@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 新备份规则：同时排除云备份和设备迁移中的频控文件，避免恢复旧次数。 -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="sharedpref" path="browser_widget_guide.xml" />

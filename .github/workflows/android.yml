@@ -1,3 +1,4 @@
+# 每次推送或 PR 验证单元测试、Debug、混淆 Release 和 Lint，并保存报告与 Debug APK。
 name: Android validation
 on:
   push:

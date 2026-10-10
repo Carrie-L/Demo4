@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 验证应用浅色主题，业务布局使用主题文字色；正式迁移沿用项目自己的主题体系。 -->
 <resources>
     <style name="Theme.WidgetGuide" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="colorPrimary">#146C60</item>

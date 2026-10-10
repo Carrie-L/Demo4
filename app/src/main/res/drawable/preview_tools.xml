@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 工具组件预览占位图；正式接入时替换为产品提供的真实截图。 -->
 <vector
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="320dp"
