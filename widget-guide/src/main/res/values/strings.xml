@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="guide_preview_description">小组件预览</string>
+    <string name="guide_add_desktop">添加到桌面</string>
+    <string name="guide_add_assistant">添加到负一屏</string>
+    <string name="guide_later">暂不添加</string>
+    <string name="guide_navigation_failed">暂时无法打开添加页面，请稍后重试</string>
+</resources>

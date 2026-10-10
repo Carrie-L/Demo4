@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">小组件引导 · 验证工程</string>
+    <string name="home">首页</string>
+    <string name="mine">我的</string>
+    <string name="recommend">推荐</string>
+    <string name="ai">AI 快看</string>
+    <string name="sports">体育</string>
+    <string name="local">地区</string>
+    <string name="home_heading">浏览器</string>
+    <string name="search_box">搜索你感兴趣的内容</string>
+    <string name="direct_search">首页搜索按钮 → 直接查看结果</string>
+    <string name="ai_article">AI 快看资讯 → 详情</string>
+    <string name="regular_article">普通资讯 → 详情（用于验证非法搜索路径）</string>
+    <string name="bookmarks">书签</string>
+    <string name="history">历史</string>
+    <string name="downloads">下载</string>
+    <string name="settings">设置</string>
+    <string name="debug_panel">开发验证面板</string>
+    <string name="guide_status">A 已展示 %1$d 次 · B 已展示 %2$d 次\n已满足：%3$s\n状态：%4$s</string>
+    <string name="search_active">搜索激活页</string>
+    <string name="search_results">搜索结果页</string>
+    <string name="news_detail">资讯详情页</string>
+    <string name="other_page">其他业务页面</string>
+    <string name="detail_help">使用下方按钮验证页面链路。完成合法行为后，可以继续跳转任意页面再返回主页。</string>
+    <string name="go_search_active">进入搜索激活页</string>
+    <string name="go_results">提交搜索 → 结果页</string>
+    <string name="go_other">继续跳转其他页面</string>
+    <string name="return_main">返回主页面（清除中间页面）</string>
+    <string name="back">返回</string>
+    <string name="add_widget">添加小组件</string>
+    <string name="settings_help">主动添加入口不受自动弹窗开关、冷却和次数限制。</string>
+    <string name="add_heading">小组件添加页</string>
+    <string name="add_destination">已接收 deeplink\n组件：%1$s\n目标：%2$s</string>
+    <string name="add_explanation">这是验证跳转的落地页。正式接入时替换为现有小组件添加页；本工程不模拟添加成功，也不把点击当成添加成功。</string>
+    <string name="debug_heading">引导规则验证</string>
+    <string name="debug_help">仅 Debug 可用。默认关闭自动弹窗；配置与虚拟时间仅在当前进程有效，行为和展示次数保存到 SP。</string>
+    <string name="enable_pop">允许自动弹窗 enablePop</string>
+    <string name="first_interval">首次展示后间隔（天，24 小时）</string>
+    <string name="second_interval">第二次展示后间隔（天，24 小时）</string>
+    <string name="apply_config">应用云配</string>
+    <string name="advance_day">测试时钟前进 24 小时</string>
+    <string name="reset_state">清空引导状态（仅 Debug）</string>
+    <string name="invalid_intervals">请输入大于或等于 0 的整数</string>
+    <string name="config_applied">配置已生效</string>
+    <string name="confirm_reset">清空所有行为和频控记录，并重置测试时钟？</string>
+    <string name="reset_failed">重置失败，请查看日志</string>
+    <string name="tools_title">常用工具，桌面直达</string>
+    <string name="tools_description">把搜索、书签、历史、下载和扫一扫放到桌面，常用功能一步打开。</string>
+    <string name="ai_title">AI 快看，随时掌握新资讯</string>
+    <string name="ai_description">把 AI 快看添加为小组件，在桌面或负一屏浏览资讯。</string>
+    <string name="preview_description">小组件布局示意图，正式接入时替换为已开发组件的真实截图</string>
+    <string-array name="channels">
+        <item>推荐</item>
+        <item>AI 快看</item>
+        <item>体育</item>
+        <item>地区</item>
+    </string-array>
+</resources>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.WidgetGuide" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="colorPrimary">#146C60</item>
+        <item name="colorPrimaryDark">#0E4F46</item>
+        <item name="colorAccent">#146C60</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+    </style>
+    <style name="PageTitle">
+        <item name="android:textSize">26sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:layout_marginBottom">16dp</item>
+    </style>
+</resources>
