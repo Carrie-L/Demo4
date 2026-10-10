@@ -1,5 +1,7 @@
 # 小组件添加引导系统设计
 
+> **V1 历史实现说明。** 本文解释旧代码；最新需求和后续实现以 [IMPLEMENTATION_PLAN_V2.md](IMPLEMENTATION_PLAN_V2.md) 为准。V2 尚未编码；请勿继续采用旧版长期保留行为、到期补弹、AB 总计三次等规则。
+
 本文对应 Demo4 当前实现，面向接手维护和迁移到正式浏览器项目的开发者。代码使用 Kotlin + XML，默认存储为 SharedPreferences，提供 MMKV 替换边界。这里的 Navigation 指本模块的导航事件协议及 `DemoNavigation` 适配器，不是 Jetpack Navigation 组件。
 
 ## 1. 目标、范围与核心约定

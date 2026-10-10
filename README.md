@@ -1,5 +1,9 @@
 # Browser Widget Guide
 
+> **最新需求：V2（2026-10-11），目前处于方案阶段，业务代码尚未实施。** 请先读 [完整实现方案 V2](docs/IMPLEMENTATION_PLAN_V2.md)：每轮新行为并原栈返回、A/B 各自最多三次、共享每日一次、点击添加停止对应类型。
+>
+> 下文“已实现规则”、运行步骤及旧测试均描述 V1，不能作为 V2 的行为或验收依据。本次仅提交设计文档和版本提示。
+
 Kotlin + XML 小组件添加引导。`widget-guide` 是可迁移功能模块；`app` 是真实导航验证宿主，使用 ARouter。
 
 ## 设计与代码阅读
@@ -15,7 +19,7 @@ Kotlin + XML 小组件添加引导。`widget-guide` 是可迁移功能模块；`
 - Debug applicationId 为 `com.carrie.demo4.debug`，与 Release 数据隔离。
 - ARouter 1.5.2 的旧类型引用通过 Jetifier 转换，同时排除重复 support 依赖，由 AndroidX 提供对应实现。
 
-## 已实现规则
+## V1 已实现规则（非最新需求）
 
 | 行为 | 合法路径 | 展示位置 |
 |---|---|---|

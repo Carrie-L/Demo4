@@ -1,5 +1,7 @@
 # 验收清单
 
+> **V1 历史实现说明。** 本文解释旧代码；最新需求和后续实现以 [IMPLEMENTATION_PLAN_V2.md](IMPLEMENTATION_PLAN_V2.md) 为准。V2 尚未编码；请勿继续采用旧版长期保留行为、到期补弹、AB 总计三次等规则。
+
 完整架构、字段字典和设计取舍见 [系统设计文档](SYSTEM_DESIGN.md)。
 
 ## 自动化
