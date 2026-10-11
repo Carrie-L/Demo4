@@ -52,7 +52,7 @@ class WidgetGuideManager( // 应用进程只创建一个实例。
                 val history = record ?: store.read().also { record = it } // 首次读取 SP，后续用本进程快照。
                 val now = currentTimeMillis() // 频次判断与本次展示用同一时钟来源。
                 if (!canDisplayHere() || activity.isFinishing || activity.isDestroyed || !GuidePolicy.canShow( // 严格复核位置和频次。
-                        type, currentRules(), history, now, ZoneId.systemDefault()
+                        type, currentRules(), history, now, ZoneId.systemDefault() // 此次尝试的类型、云配、历史、时间和当前时区。
                     )) { // 不满足任何一项就结束本次机会。
                     busy = false // 解锁后也不留下待弹任务。
                     return@launch // 不在下次 onResume 重试。
