@@ -6,9 +6,10 @@
 
 ## 阅读顺序
 
-1. [系统设计与实现方案](docs/SYSTEM_DESIGN.md)：需求、触发流程、频次、本地存储、弹窗与边界。
-2. [Kotlin + XML 接入说明](docs/INTEGRATION.md)：ARouter、返回结果、字段解释、生命周期和代码示例。
-3. [单测、验收与风险](docs/ACCEPTANCE.md)：需要实施的测试及风险处理。
+1. [从一次点击读懂代码（含 Mermaid）](docs/CODE_WALKTHROUGH.md)：按页面实际往返顺序解释变量、方法、AI 快看两条路径与弹窗写盘。
+2. [系统设计与实现方案](docs/SYSTEM_DESIGN.md)：需求、触发流程、频次、本地存储、弹窗与边界。
+3. [Kotlin + XML 接入说明](docs/INTEGRATION.md)：ARouter、返回结果、字段解释、生命周期和代码示例。
+4. [单测、验收与风险](docs/ACCEPTANCE.md)：需要实施的测试及风险处理。
 
 方案只需要三个部分：相关业务页面回传结果、一个引导管理器、一个复用的 XML 底部弹窗。任意中间页面保持原有导航，不需要记录所有页面，不需要维护全局页面栈。
 
