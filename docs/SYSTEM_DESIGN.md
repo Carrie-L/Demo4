@@ -253,3 +253,18 @@ ARouter 可保留，使用 requestCode 重载接收页面返回结果。`onArriv
 - [SharedPreferences.Editor](https://developer.android.com/reference/android/content/SharedPreferences.Editor) 与 [MMKV Android 用法](https://github.com/Tencent/MMKV/wiki/android_tutorial)：本地持久化 API。
 
 技术依据解释 API，业务规则以本文为准。
+
+## 14. 开发验证日志设计
+
+Debug 构建把同一条事件写入 `WidgetGuideTrace` Logcat 与应用进程内的有界队列。每条带递增序号、可受测试时钟影响的墙上时间，以及不受测试时钟影响的 `elapsed` 毫秒。开发验证面板的“查看弹窗本地数据”显示队列最近 120 条，按发生顺序排列；上方的 SP 原始键值每次从文件重新读取。进程退出后队列清空，SP 展示历史继续保留。Release 不写详细链路日志。
+
+| 阶段 | 主要事件 | 用来定位的问题 |
+|---|---|---|
+| 导航 | `route.request/found/arrived/lost/interrupted`，`page.created` | 路由是否真的抵达预期页面；失败是否清除等待关系 |
+| 关键页与回传 | `page.result_prepared`、`home.result_valid`、结果不匹配、`page.stopped` | 结果标记是否写入、是否经原栈回到正确父页、是否中途被丢弃 |
+| 展示入口 | `home.post_resume`、`guide.attempt`、位置拒绝 | 结果是否进入管理器，宿主及 tab 是否仍有效 |
+| 频控 | `guide.history_read`、`guide.policy_input`、拒绝原因 | 配置开关、SP/内存来源、独立次数、停止状态、24 小时间隔与共享日期 |
+| 窗口与持久化 | `guide.dialog_on_show`、`guide.persist_show_start`、写盘成功或失败、`guide.dialog_dismissed` | 区分“页面结果有效”“窗口确实显示”“计数确实落盘”三个节点 |
+| 添加与调试 | `guide.add_clicked`、`guide.persist_stop_success/failed`、`guide.add_navigation`、`debug.config_applied` | 点击是否永久停止对应类型、deeplink 是否请求打开、配置是否真正应用 |
+
+实际排查时，先查看记录页最近事件的最后几行，再从最近一次 `route.request` 顺序回看；例如有 `guide.policy_input` 而没有 `guide.dialog_on_show`，重点看紧随其后的拒绝原因；有 `guide.dialog_on_show` 而没有写盘成功，则查看 SP 写入错误。Logcat 可用 `adb logcat -s WidgetGuideTrace:D '*:S'`。日志不记录搜索词、完整 deeplink 或资讯正文；事件队列不进入 SP，也不参与弹窗资格计算。
