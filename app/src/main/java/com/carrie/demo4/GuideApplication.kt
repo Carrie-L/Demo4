@@ -11,6 +11,8 @@ import com.carrie.widgetguide.WidgetGuideManager // 唯一的自动引导协调�
 class GuideApplication : Application() { // 不在 Application 中记录用户访问过哪些页面。
     var rules = GuideRules(enable = false, firstPopInterval = 1L, secondPopInterval = 10L) // 默认关闭。
     var highlightDeeplink = "demo4://search/results" // 可在 Debug 切成资讯详情落点。
+    var lastGuideEvent = "尚未收到相关页面的返回结果" // 仅保存本进程最近一条诊断，不形成下次展示资格。
+        private set // 只能通过统一诊断入口更新。
     private var debugOffsetMillis = 0L // 只在当前进程推进测试时间。
     lateinit var store: GuideStore // 单进程一个持久化读写入口。
         private set // 页面不能另建不同的存储实例。
@@ -22,8 +24,12 @@ class GuideApplication : Application() { // 不在 Application 中记录用户�
         if (BuildConfig.DEBUG) { ARouter.openLog(); ARouter.openDebug() } // 开发构建显示路由日志。
         ARouter.init(this) // 注册 Demo 的页面地址。
         store = GuideStore(this) // 引导记录保存在独立 SP 文件。
-        guideManager = WidgetGuideManager(store, { rules }, { nowMillis() }) // 频次每次使用最新配置与时间。
+        guideManager = WidgetGuideManager(store, { rules }, { nowMillis() }, { recordGuideEvent(it) }) // 频次每次使用最新配置与时间。
     } // 应用初始化结束。
+
+    fun recordGuideEvent(message: String) { // 记录返回、拒绝或展示的最后一步。
+        lastGuideEvent = "${java.time.Instant.ofEpochMilli(nowMillis())}  $message" // 诊断只在进程内保留，不写行为资格。
+    } // 诊断事件记录结束。
 
     fun nowMillis(): Long = System.currentTimeMillis() + debugOffsetMillis // Demo 时钟，正式项目取系统时间。
 

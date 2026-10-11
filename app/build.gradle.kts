@@ -33,6 +33,8 @@ android {
         }
     }
     lint { abortOnError = true }
+    // 验证真实 Activity 返回回调与页面恢复的交接。
+    testOptions { unitTests.isIncludeAndroidResources = true }
 }
 // ARouter 注解处理器使用模块名生成路由索引。
 kapt { arguments { arg("AROUTER_MODULE_NAME", project.name) } }
@@ -50,4 +52,7 @@ dependencies {
         exclude(group = "com.android.support")
     }
     kapt("com.alibaba:arouter-compiler:1.5.2")
+    testImplementation("junit:junit:4.13.2") // 验证返回链路断言。
+    testImplementation("org.robolectric:robolectric:4.14.1") // 模拟实际 Activity 生命周期。
+    testImplementation("androidx.test:core:1.6.1") // 取得被测应用上下文。
 }

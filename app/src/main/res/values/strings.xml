@@ -61,6 +61,11 @@
     <string name="apply_config">应用云配</string>
     <string name="advance_day">测试时钟前进 24 小时</string>
     <string name="reset_state">清空引导状态（仅 Debug）</string>
+    <!-- 弹窗本地频控数据可在设备上直接阅读与刷新。 -->
+    <string name="guide_records_open">查看弹窗本地数据</string>
+    <string name="guide_records_title">弹窗本地数据</string>
+    <string name="guide_records_refresh">重新读取本地记录</string>
+    <string name="guide_records_loading">正在读取本地记录…</string>
     <string name="invalid_intervals">请输入大于或等于 0 的整数</string>
     <string name="config_applied">配置已生效</string>
     <string name="confirm_reset">清空频次与停止标志，并重置测试时钟？</string>

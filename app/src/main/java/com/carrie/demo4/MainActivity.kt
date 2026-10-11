@@ -5,7 +5,6 @@ import android.os.Bundle // 保存两个 tab 的 UI 位置。
 import android.view.View // 显示和隐藏对应内容。
 import androidx.activity.viewModels // 普通 ViewModel 保留旋转时的在途请求。
 import androidx.appcompat.app.AppCompatActivity // 页面宿主和返回回调。
-import androidx.lifecycle.Lifecycle // 判断页面是否已经恢复展示。
 import androidx.lifecycle.lifecycleScope // Debug 诊断读盘使用页面协程。
 import kotlinx.coroutines.launch // 读取完成后显示调试次数。
 import com.carrie.demo4.databinding.ActivityMainBinding // 首页 XML 绑定。
@@ -20,6 +19,7 @@ class MainActivity : AppCompatActivity() { // 冷启没有 pendingReturn，不�
     private var mine = false // 底部位置，false 为首页。
     private var channel = 0 // 顶部频道：0 推荐、1 AI 快看、2 体育、3 地区。
     private var pendingReturn: Int? = null // 仅在本次回调与页面恢复之间交接。
+    private var resumedForGuide = false // 由真实 Activity 回调标记宿主已恢复，避免 Lifecycle 状态派发先后丢失结果。
 
     override fun onCreate(savedInstanceState: Bundle?) { // 建立首页、我的及其业务入口。
         super.onCreate(savedInstanceState) // 恢复系统页面生命周期。
@@ -37,6 +37,7 @@ class MainActivity : AppCompatActivity() { // 冷启没有 pendingReturn，不�
         binding.highlightKeyword.setOnClickListener { // 暗词根据实际 deeplink 决定落点。
             if (guideReturn.waitingRequestCode != null) return@setOnClickListener // 避免多次点击。
             guideReturn.waitingRequestCode = GuideResultContract.HOME_SEARCH // 首页等待一次搜索类返回。
+            app.recordGuideEvent("首页打开高亮暗词，等待搜索结果返回") // 便于排查 deeplink 实际落点。
             DemoNavigation.highlight(this, app.highlightDeeplink) { clearWaiting(GuideResultContract.HOME_SEARCH) } // 只认结果页标记。
         } // 高亮暗词入口结束。
         binding.scan.setOnClickListener { open(DemoPage.SCANNER, GuideResultContract.HOME_SCAN) } // 扫一扫返回首页检查 A。
@@ -62,6 +63,7 @@ class MainActivity : AppCompatActivity() { // 冷启没有 pendingReturn，不�
     private fun open(kind: DemoPage, code: Int, tab: String? = null) { // 相关页面共用一套启动方式。
         if (guideReturn.waitingRequestCode != null) return // 一次只接收一个结果关系。
         guideReturn.waitingRequestCode = code // 标记当前原入口正等待此业务返回。
+        app.recordGuideEvent("首页打开 ${kind.name}，等待 requestCode=$code 的原栈返回") // 没有结果回调时也能看到起点。
         DemoNavigation.page(this, kind, code, tab) { clearWaiting(code) } // ARouter 启动并关联 requestCode。
     } // 页面启动结束。
 
@@ -82,31 +84,41 @@ class MainActivity : AppCompatActivity() { // 冷启没有 pendingReturn，不�
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) { // Android 按原调用关系交付结果。
         super.onActivityResult(requestCode, resultCode, data) // 保留 AppCompat 及原业务结果分发。
-        if (guideReturn.waitingRequestCode != requestCode) return // 忽略不是此轮发起的结果。
+        val marker = data?.getStringExtra(GuideResultContract.EXTRA_VISIT) // 诊断页展示实际返回的关键页标记。
+        app.recordGuideEvent("首页收到返回：requestCode=$requestCode，resultCode=$resultCode，等待=${guideReturn.waitingRequestCode}，标记=$marker") // 留下本轮结果证据。
+        if (guideReturn.waitingRequestCode != requestCode) { app.recordGuideEvent("首页忽略返回：requestCode 与当前等待不一致"); return } // 忽略不是此轮发起的结果。
         guideReturn.waitingRequestCode = null // 先消费，再检查标记，防止重复回调。
         val expected = GuideResultContract.expectedVisit(requestCode) ?: return // 未知请求码不做引导。
-        if (data?.getStringExtra(GuideResultContract.EXTRA_VISIT) != expected) return // 实际落点必须正确。
+        if (marker != expected) { app.recordGuideEvent("首页不弹：需要访问 $expected，实际返回 $marker"); return } // 实际落点必须正确。
         pendingReturn = requestCode // 只交给本次紧邻的恢复阶段。
         consumePendingIfReady() // 若已经恢复，立即处理；否则等 onPostResume。
     } // 返回结果处理结束。
 
+    override fun onResume() { // 用宿主回调直接确认本次回到前台。
+        super.onResume() // 保留 AndroidX 的生命周期派发。
+        resumedForGuide = true // 页面已进入真实恢复回调。
+        // 已收到的结果留给 onPostResume，避免系统窗口尚未就绪时打开 Dialog。
+    } // 前台恢复结束。
+
     override fun onPostResume() { // 可能先收到结果，后完成宿主恢复。
         super.onPostResume() // 确保系统恢复回调完成。
+        resumedForGuide = true // 有些设备在此阶段才交付 Activity 结果。
         consumePendingIfReady() // 冷启没有 pending，不会调用管理器。
         refreshDebugStatus() // 仅刷新可见诊断文字，不触发引导。
     } // 页面恢复完成。
 
     private fun consumePendingIfReady() { // 一次结果最多请求一次自动引导。
-        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return // 尚不可展示时留给紧接的恢复。
+        if (!resumedForGuide) return // 尚不可展示时留给紧接的恢复。
         val request = pendingReturn ?: return // 没有此轮回传，直接结束。
         pendingReturn = null // 频次未到也不保留行为资格。
-        if (!isExpectedLocation(request)) return // 入口 tab 不匹配就放弃。
+        if (!isExpectedLocation(request)) { app.recordGuideEvent("首页不弹：返回时入口 tab 已改变或页面不可见"); return } // 入口 tab 不匹配就放弃。
         val type = if (request == GuideResultContract.HOME_AI_DETAIL) GuideType.AI_QUICK_NEWS else GuideType.COMMON_TOOLS // 只按本入口决定类型。
-        app.guideManager.tryShow(this, type, content(type), { isExpectedLocation(request) }, DemoNavigation::openAdd) // 管理器只检查本轮一次。
+        app.recordGuideEvent("首页返回有效：${type.name}，开始检查配置和本地频次") // 供本地记录页判断链路是否到达管理器。
+        app.guideManager.tryShow(this, type, content(type), { isExpectedLocation(request) }, DemoNavigation::openAdd) { refreshDebugStatus() } // 落盘成功后更新首页计数。
     } // 本轮返回消费结束。
 
     private fun isExpectedLocation(request: Int): Boolean { // 不需要记录全局页面栈。
-        val active = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) && !isFinishing && !isDestroyed // 宿主必须可见。
+        val active = resumedForGuide && !isFinishing && !isDestroyed // 按实际页面恢复和销毁状态复核。
         return active && when (request) { // 检查当前两个层级的 tab。
             GuideResultContract.HOME_SEARCH, GuideResultContract.HOME_SCAN -> !mine && channel != 1 // A 位于首页非 AI tab。
             GuideResultContract.MINE_TOOLS -> mine // 工具 A 位于我的底部。
@@ -142,6 +154,11 @@ class MainActivity : AppCompatActivity() { // 冷启没有 pendingReturn，不�
         app.guideManager.dismissForOwner(this) // 关闭当前宿主正在显示的底部 Dialog。
         super.onStop() // 完成系统生命周期回调。
     } // 宿主离开结束。
+
+    override fun onPause() { // 离开页面后异步读盘不能再打开弹窗。
+        resumedForGuide = false // 当前宿主已不适合展示。
+        super.onPause() // 保留系统暂停派发。
+    } // 暂停处理结束。
 
     override fun onSaveInstanceState(outState: Bundle) { // 只保存 UI 选中位置。
         outState.putBoolean("mine", mine) // 恢复底部首页 / 我的。

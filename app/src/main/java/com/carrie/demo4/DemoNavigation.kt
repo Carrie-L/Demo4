@@ -13,6 +13,7 @@ import com.alibaba.android.arouter.launcher.ARouter // 保留项目原有跳转�
 object DemoNavigation { // Demo 单处封装路由地址。
     fun settings(activity: Activity) { ARouter.getInstance().build("/settings/main").navigation(activity) } // 我的设置页。
     fun debug(activity: Activity) { ARouter.getInstance().build("/debug/guide").navigation(activity) } // Debug 配置面板。
+    fun records(activity: Activity) { ARouter.getInstance().build("/debug/guide-records").navigation(activity) } // 查看真实本地频次键值。
     fun page(activity: Activity, kind: DemoPage, requestCode: Int? = null, selectedTab: String? = null, onFailure: () -> Unit = {}) { // 入口可请求 Android 结果。
         val route = ARouter.getInstance().build("/browser/page").withString("pageKind", kind.name) // 实际打开的页面类型。
         if (selectedTab != null) route.withString("selectedTab", selectedTab) // 书签和历史复用同一工具页。

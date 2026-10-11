@@ -42,6 +42,7 @@ class DebugActivity : AppCompatActivity() { // 发布版立即退出。
             } // 配置校验结束。
         } // 应用配置监听结束。
         binding.advanceDay.setOnClickListener { app.advanceDayForDebug(); updateTime() } // 前进时钟不自动弹。
+        binding.showRecords.setOnClickListener { DemoNavigation.records(this) } // ARouter 只打开记录页，返回仍走原栈。
         binding.resetState.setOnClickListener { // 用户显式重置 Debug 数据。
             androidx.appcompat.app.AlertDialog.Builder(this) // 防止误触清除频次。
                 .setMessage(R.string.confirm_reset) // 说明清理影响。

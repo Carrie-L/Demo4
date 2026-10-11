@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 开发验证专用：直接读取独立 SP 文件并展示最近一次返回诊断。 -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+    <!-- 上方操作区与下方可选择的原始文本同页展示。 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+        <!-- 页面标题明确展示的是实际本地记录。 -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/guide_records_title"
+            android:textSize="20sp" />
+        <!-- 写入可能在窗口出现后完成，可随时重新读取。 -->
+        <Button
+            android:id="@+id/refresh"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="@string/guide_records_refresh" />
+        <!-- 返回开发面板仍沿原 Activity 栈。 -->
+        <Button
+            android:id="@+id/back"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="@string/back" />
+        <!-- 可选择、复制包含时间、次数和每一个原始键值的文本。 -->
+        <TextView
+            android:id="@+id/record_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="12dp"
+            android:text="@string/guide_records_loading"
+            android:textIsSelectable="true"
+            android:textSize="15sp" />
+    </LinearLayout>
+</ScrollView>

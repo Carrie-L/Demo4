@@ -42,4 +42,13 @@ class GuideStoreTest { // 验证真实读写而不是复制频次函数。
         assertTrue(store.clearForDebug()) // Demo 显式清空此频次文件。
         assertEquals(GuideRecord(), GuideStore(context).read()) // 不留下两类历史或共享时间。
     } // 清理测试结束。
+
+    @Test fun debugSnapshotReadsRealStorageInsteadOfCachedRecord() = runBlocking { // 诊断页需要看到磁盘原始键值。
+        val first = GuideStore(context) // 先创建记录页使用的存储实例。
+        assertTrue(first.rawSnapshot().isEmpty()) // 尚未展示时不假造七个零值。
+        val second = GuideStore(context) // 模拟另一处代码更新同一个 SP 文件。
+        assertTrue(second.write(GuideRecord(commonTools = TypeRecord(1, 4567L), lastAnyShownAtMillis = 4567L))) // 实际提交一次展示。
+        assertEquals(1, first.rawSnapshot()["common_tools_widget_show_count"]) // 已有实例再次读取也能看到真实磁盘值。
+        assertEquals(4567L, first.rawSnapshot()["last_any_widget_guide_shown_at_millis"]) // 共享时间同样原样展示。
+    } // 直接查看本地数据测试结束。
 } // SP 持久化单测结束。

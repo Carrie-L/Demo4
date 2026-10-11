@@ -8,7 +8,6 @@ import android.view.View // 不相关控件按页面类型隐藏。
 import android.view.ViewGroup // ViewPager2 页面的容器类型。
 import androidx.activity.viewModels // 搜索链只保留内存状态。
 import androidx.appcompat.app.AppCompatActivity // ARouter 页面与系统返回宿主。
-import androidx.lifecycle.Lifecycle // 检查 AI 二级列表确实恢复可见。
 import androidx.recyclerview.widget.RecyclerView // ViewPager2 的四项 Adapter。
 import com.alibaba.android.arouter.facade.annotation.Route // 注册原项目路由路径。
 import com.carrie.demo4.databinding.ActivityDetailBinding // 业务页 XML 控件。
@@ -24,6 +23,7 @@ class DetailActivity : AppCompatActivity() { // 页面结束只能沿原栈 fini
     private val state: GuideReturnState by viewModels() // 搜索中转或 AI 二级页的在途返回。
     private val app get() = application as GuideApplication // 读取进程共享管理器。
     private var pendingAiReturn = false // AI 二级列表本次回传等待恢复。
+    private var resumedForGuide = false // 使用页面实际恢复回调确认二级列表可见。
     private val outgoingResult = Intent() // 与现有业务结果合并使用的 Demo 返回 Intent。
     private var selectedToolTab = "bookmarks" // 书签和历史属于同一 Activity 的左右 tab。
 
@@ -82,12 +82,14 @@ class DetailActivity : AppCompatActivity() { // 页面结束只能沿原栈 fini
     private fun searchFromActivation() { // 只有激活页真正进入结果才具备回传条件。
         if (page != DemoPage.SEARCH_ACTIVATION || state.waitingRequestCode != null) return // 防止重复发起。
         state.waitingRequestCode = GuideResultContract.ACTIVATION_SEARCH // 激活页等待实际结果访问标记。
+        app.recordGuideEvent("搜索激活页打开搜索结果，等待原栈返回") // 区分中转链路从未返回的情况。
         DemoNavigation.page(this, DemoPage.SEARCH_RESULTS, GuideResultContract.ACTIVATION_SEARCH) { clearWaiting(GuideResultContract.ACTIVATION_SEARCH) } // ARouter 保留业务调用关系。
     } // 搜索结果页打开结束。
 
     private fun openAiDetail() { // AI 二级页直接持有 B 的触发返回。
         if (page != DemoPage.AI_SECONDARY || state.waitingRequestCode != null) return // 只允许一轮资讯在途。
         state.waitingRequestCode = GuideResultContract.SECONDARY_AI_DETAIL // 二级列表等待资讯结果。
+        app.recordGuideEvent("AI 快看二级页打开资讯详情，等待原栈返回") // 诊断二级页结果链路。
         DemoNavigation.page(this, DemoPage.NEWS_DETAIL, GuideResultContract.SECONDARY_AI_DETAIL) { clearWaiting(GuideResultContract.SECONDARY_AI_DETAIL) } // 原栈返回到二级列表。
     } // AI 二级资讯打开结束。
 
@@ -97,14 +99,22 @@ class DetailActivity : AppCompatActivity() { // 页面结束只能沿原栈 fini
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) { // 由 Android 按原调用关系送回。
         super.onActivityResult(requestCode, resultCode, data) // 保留其它业务处理。
-        if (state.waitingRequestCode != requestCode) return // 忽略不是此页面发起的返回。
+        val marker = data?.getStringExtra(GuideResultContract.EXTRA_VISIT) // 保存实际页面传回的访问标记。
+        app.recordGuideEvent("业务页 ${page.name} 收到返回：requestCode=$requestCode，resultCode=$resultCode，等待=${state.waitingRequestCode}，标记=$marker") // 便于检查搜索中转或 AI 详情。
+        if (state.waitingRequestCode != requestCode) { app.recordGuideEvent("业务页忽略返回：requestCode 与当前等待不一致"); return } // 忽略不是此页面发起的返回。
         state.waitingRequestCode = null // 先消费一次，防重复回调。
-        if (data?.getStringExtra(GuideResultContract.EXTRA_VISIT) != GuideResultContract.expectedVisit(requestCode)) return // 必须有实际关键页标记。
+        if (marker != GuideResultContract.expectedVisit(requestCode)) { app.recordGuideEvent("业务页不传递：关键页访问标记不匹配"); return } // 必须有实际关键页标记。
         when (requestCode) { // 不同入口处理不同展示位置。
             GuideResultContract.ACTIVATION_SEARCH -> { state.hasVisitedSearchResults = true; prepareSearchResult() } // 先转交给激活页。
             GuideResultContract.SECONDARY_AI_DETAIL -> { pendingAiReturn = true; consumeAiIfReady() } // 返回二级页时才检查 B。
         } // 返回协议分发结束。
     } // 页面回传处理结束。
+
+    override fun onResume() { // 接收在本次恢复前送达的子页面结果。
+        super.onResume() // 维持 AndroidX 生命周期正常顺序。
+        resumedForGuide = true // 此时真实页面已进入恢复回调。
+        // 已收到的结果在 onPostResume 处理，确保弹窗窗口已就绪。
+    } // 二级页恢复结束。
 
     private fun prepareSearchResult() { // 激活页只传递访问过结果这一事实。
         outgoingResult.putExtra(GuideResultContract.EXTRA_VISIT, GuideResultContract.SEARCH_RESULTS) // 不把游戏或视频当结果。
@@ -113,6 +123,7 @@ class DetailActivity : AppCompatActivity() { // 页面结束只能沿原栈 fini
 
     override fun onPostResume() { // 确认关键页面真的显示过。
         super.onPostResume() // 先完成系统恢复。
+        resumedForGuide = true // 覆盖先 postResume 后结果的系统回调顺序。
         val marker = when (page) { // 只有关键页写结果标记。
             DemoPage.SEARCH_RESULTS -> GuideResultContract.SEARCH_RESULTS // 搜索结果已显示。
             DemoPage.TOOLS, DemoPage.DOWNLOADS -> GuideResultContract.TOOLS // 我的工具页已显示。
@@ -128,9 +139,10 @@ class DetailActivity : AppCompatActivity() { // 页面结束只能沿原栈 fini
     } // 页面恢复结束。
 
     private fun consumeAiIfReady() { // 二级列表当轮只触发一次 B。
-        if (!pendingAiReturn || page != DemoPage.AI_SECONDARY || !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return // 不满足入口位置就等待紧邻恢复。
+        if (!pendingAiReturn || page != DemoPage.AI_SECONDARY || !resumedForGuide) return // 不满足入口位置就等待紧邻恢复。
         pendingAiReturn = false // 先清标记，冷却未到不能补弹。
-        app.guideManager.tryShow(this, GuideType.AI_QUICK_NEWS, aiContent(), { page == DemoPage.AI_SECONDARY && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) && !isFinishing && !isDestroyed }, DemoNavigation::openAdd) // 弹在二级页底部。
+        app.recordGuideEvent("AI 快看二级页返回有效：开始检查配置和本地频次") // 诊断页面记录到达管理器的节点。
+        app.guideManager.tryShow(this, GuideType.AI_QUICK_NEWS, aiContent(), { page == DemoPage.AI_SECONDARY && resumedForGuide && !isFinishing && !isDestroyed }, DemoNavigation::openAdd) // 弹在二级页底部。
     } // B 的二级入口消费结束。
 
     private fun aiContent(): GuideContent = GuideContent( // 复用与首页 AI 一致的组件内容。
@@ -147,6 +159,11 @@ class DetailActivity : AppCompatActivity() { // 页面结束只能沿原栈 fini
         app.guideManager.dismissForOwner(this) // 本页 Dialog 不在恢复后重建。
         super.onStop() // 完成系统生命周期回调。
     } // 页面离开结束。
+
+    override fun onPause() { // 业务页不可见时拒绝异步结束后的窗口展示。
+        resumedForGuide = false // 不在离开页面后补弹。
+        super.onPause() // 保留系统暂停回调。
+    } // 页面暂停结束。
 
     override fun onSaveInstanceState(outState: Bundle) { // 只保存工具 tab UI。
         outState.putString("selectedToolTab", selectedToolTab) // 左右 tab 在旋转后保持原样。

@@ -94,6 +94,13 @@
             android:layout_height="wrap_content"
             android:minHeight="48dp"
             android:text="@string/reset_state" />
+        <!-- 直接打开本地 SP 原始键值与最近一次拒绝原因。 -->
+        <Button
+            android:id="@+id/show_records"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="@string/guide_records_open" />
         <!-- 返回上一页面，页面恢复时由生命周期报告 visible。 -->
         <Button
             android:id="@+id/back"

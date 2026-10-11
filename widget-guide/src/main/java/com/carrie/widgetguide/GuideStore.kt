@@ -57,4 +57,8 @@ class GuideStore(context: Context) { // 实际项目已有 MMKV 时可替换此�
     suspend fun clearForDebug(): Boolean = withContext(Dispatchers.IO) { // 只给 Debug 面板显式调用。
         prefs.edit().clear().commit() // 清除测试频次及停止状态。
     } // 清理结束。
+
+    suspend fun rawSnapshot(): Map<String, Any?> = withContext(Dispatchers.IO) { // 调试页从实际 SP 文件读取原始键值。
+        prefs.all.toSortedMap() // 返回独立文件的完整快照，不使用管理器的内存缓存。
+    } // 原始记录读取结束。
 } // 存储类结束。
