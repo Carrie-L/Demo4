@@ -19,7 +19,7 @@ class MainActivity : AppCompatActivity() { // 冷启没有 pendingReturn，不�
     private var mine = false // 底部位置，false 为首页。
     private var channel = 0 // 顶部频道：0 推荐、1 AI 快看、2 体育、3 地区。
     private var pendingReturn: Int? = null // 仅在本次回调与页面恢复之间交接。
-    private var resumedForGuide = false // 由真实 Activity 回调标记宿主已恢复，避免 Lifecycle 状态派发先后丢失结果。
+    private var resumedForGuide = false // onPostResume 标记窗口已就绪，避免 Lifecycle 状态派发先后丢失结果。
 
     override fun onCreate(savedInstanceState: Bundle?) { // 建立首页、我的及其业务入口。
         super.onCreate(savedInstanceState) // 恢复系统页面生命周期。
@@ -93,12 +93,6 @@ class MainActivity : AppCompatActivity() { // 冷启没有 pendingReturn，不�
         pendingReturn = requestCode // 只交给本次紧邻的恢复阶段。
         consumePendingIfReady() // 若已经恢复，立即处理；否则等 onPostResume。
     } // 返回结果处理结束。
-
-    override fun onResume() { // 用宿主回调直接确认本次回到前台。
-        super.onResume() // 保留 AndroidX 的生命周期派发。
-        resumedForGuide = true // 页面已进入真实恢复回调。
-        // 已收到的结果留给 onPostResume，避免系统窗口尚未就绪时打开 Dialog。
-    } // 前台恢复结束。
 
     override fun onPostResume() { // 可能先收到结果，后完成宿主恢复。
         super.onPostResume() // 确保系统恢复回调完成。

@@ -121,7 +121,7 @@
 | 结果字段被原业务后续 setResult 覆盖 | 合法访问不弹，或破坏扫码结果 | 合并原结果组装函数；保留 resultCode，并用取消扫码场景回归 |
 | 暗词 deeplink 分发丢失 requestCode | 无法收到真实结果或误判入口 | 在已有分发器保留结果关系；最终目标写标记；分别测试结果与资讯落点 |
 | 某路由使用不同任务栈或复用方式 | 原栈返回回调不符合预期 | 检查这几个相关路由的 launchMode / flags；本方案按普通栈工作，不全局追踪 |
-| onActivityResult 早于宿主可显示；AndroidX Lifecycle 状态派发与 onPostResume 的先后不同 | 合法结果可能被状态检查丢弃，次数始终为 0 | 使用 Activity 实际 onResume/onPostResume 回调维护可见标记；只交给紧接着的恢复回调一次，并在记录页暴露最近一次拦截原因 |
+| onActivityResult 早于宿主可显示；AndroidX Lifecycle 状态派发与 onPostResume 的先后不同 | 合法结果可能被状态检查丢弃，次数始终为 0 | 用 Activity 的 onPostResume 回调确认窗口就绪；只交给紧接着的恢复回调一次，并在记录页暴露最近一次拦截原因 |
 | 在 onResume / onArrival 直接弹 | 冷启、后台恢复或跳转时误弹 | 展示必须由已匹配的本轮结果驱动；对应反例集成测试 |
 | 延迟回调 / 生命周期泄漏 | 已销毁 Activity 被持有或跳转 | 无在途关系则忽略结果，切主线程复核宿主；记录操作不捕获长期 Activity |
 | 手机时间或时区被手动更改 | 冷却延长或自然日变化 | 采用设备时钟；时间倒退保守拒绝；次数不重置；不宣称本地策略能防改时钟 |

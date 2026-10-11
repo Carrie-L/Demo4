@@ -110,12 +110,6 @@ class DetailActivity : AppCompatActivity() { // 页面结束只能沿原栈 fini
         } // 返回协议分发结束。
     } // 页面回传处理结束。
 
-    override fun onResume() { // 接收在本次恢复前送达的子页面结果。
-        super.onResume() // 维持 AndroidX 生命周期正常顺序。
-        resumedForGuide = true // 此时真实页面已进入恢复回调。
-        // 已收到的结果在 onPostResume 处理，确保弹窗窗口已就绪。
-    } // 二级页恢复结束。
-
     private fun prepareSearchResult() { // 激活页只传递访问过结果这一事实。
         outgoingResult.putExtra(GuideResultContract.EXTRA_VISIT, GuideResultContract.SEARCH_RESULTS) // 不把游戏或视频当结果。
         setResult(Activity.RESULT_OK, outgoingResult) // 此时不 finish，等用户正常返回首页。
