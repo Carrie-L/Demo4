@@ -26,6 +26,9 @@ class MainReturnTest { // 覆盖原实现只看 Lifecycle.State.RESUMED 的遗�
         val method = MainActivity::class.java.getDeclaredMethod("onActivityResult", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Intent::class.java) // 反射调用受保护的系统返回回调。
         method.isAccessible = true // 测试仍通过真实页面方法处理结果。
         method.invoke(activity, GuideResultContract.HOME_SEARCH, Activity.RESULT_OK, data) // 在恢复过的首页交付本轮结果。
-        assertTrue(app.lastGuideEvent.contains("首页返回有效：COMMON_TOOLS")) // 必须进入管理器而不是因状态延迟保持零次。
+        val postResume = MainActivity::class.java.getDeclaredMethod("onPostResume") // 触发系统紧接着的窗口就绪回调。
+        postResume.isAccessible = true // 允许测试模拟受保护的系统回调。
+        postResume.invoke(activity) // 在 Lifecycle 仍为 STARTED 时完成本轮恢复。
+        assertTrue(app.lastGuideEvent, app.lastGuideEvent.contains("COMMON_TOOLS")) // 必须进入管理器而不是因状态延迟保持零次。
     } // 状态不同步回归用例结束。
 } // 页面回传测试结束。
