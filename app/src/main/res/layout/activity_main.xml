@@ -141,6 +141,13 @@
                 android:minHeight="48dp"
                 android:text="@string/downloads" />
         </LinearLayout>
+        <!-- 学习 registerForActivityResult Demo 入口按钮 -->
+        <Button
+            android:id="@+id/btn_learn_activity_result"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="@string/learn_entry_title" />
         <!-- 打开设置页，提供不受自动频控影响的手动添加入口。 -->
         <Button
             android:id="@+id/settings"

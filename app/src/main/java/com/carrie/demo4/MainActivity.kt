@@ -49,6 +49,7 @@ class MainActivity : AppCompatActivity() { // 冷启没有 pendingReturn，不�
         binding.bookmarks.setOnClickListener { open(DemoPage.TOOLS, GuideResultContract.MINE_TOOLS, "bookmarks") } // 共用工具页左 tab。
         binding.history.setOnClickListener { open(DemoPage.TOOLS, GuideResultContract.MINE_TOOLS, "history") } // 共用工具页右 tab。
         binding.downloads.setOnClickListener { open(DemoPage.DOWNLOADS, GuideResultContract.MINE_TOOLS) } // 下载工具页。
+        binding.btnLearnActivityResult.setOnClickListener { startActivity(Intent(this, LearnAActivity::class.java)) } // 学习 registerForActivityResult 入口。
         binding.settings.setOnClickListener { DemoNavigation.settings(this) } // 我的设置入口。
         binding.debugPanel.visibility = if (BuildConfig.DEBUG) View.VISIBLE else View.GONE // Debug 仅展示验证面板。
         binding.guideStatus.visibility = if (BuildConfig.DEBUG) View.VISIBLE else View.GONE // Debug 才显示次数。

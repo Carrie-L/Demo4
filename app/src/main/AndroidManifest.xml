@@ -14,6 +14,10 @@
         <activity android:name=".SettingsActivity" android:exported="false" />
         <activity android:name=".WidgetAddActivity" android:exported="false" />
         <activity android:name=".DebugActivity" android:exported="false" />
+        <activity android:name=".LearnAActivity" android:exported="false" />
+        <activity android:name=".LearnBActivity" android:exported="false" />
+        <activity android:name=".LearnCActivity" android:exported="false" />
+        <activity android:name=".LearnDActivity" android:exported="false" />
         <!-- 原始记录仅能从应用内 Debug 面板进入。 -->
         <activity android:name=".GuideRecordsActivity" android:exported="false" />
     </application>

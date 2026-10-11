@@ -83,4 +83,44 @@
         <item>体育</item>
         <item>地区</item>
     </string-array>
+
+    <!-- registerForActivityResult 学习 Demo 资源 -->
+    <string name="learn_entry_title">学习 registerForActivityResult (A->B->C)</string>
+    <string name="learn_a_title">Activity A (发起方)</string>
+    <string name="learn_b_title">Activity B (中转页)</string>
+    <string name="learn_c_title">Activity C (结果页)</string>
+    <string name="learn_a_desc">Activity A 通过 registerForActivityResult 启动 Activity B 并带入自定义 RequestCode (1001)。当 Activity B 成功返回【结果2】时，Activity A 将弹出 Dialog 提示。</string>
+    <string name="learn_b_desc">Activity B 作为中转页，通过 registerForActivityResult 启动 Activity C 并带入自定义 RequestCode (2002)。接收到 C 返回的【结果1】后才允许返回【结果2】给 A。</string>
+    <string name="learn_c_desc">Activity C 作为结果提供页，可选择返回【结果1】给 Activity B，或取消返回。</string>
+    <string name="learn_a_launch_b">启动 Activity B (RequestCode: 1001)</string>
+    <string name="learn_b_launch_c">启动 Activity C (RequestCode: 2002)</string>
+    <string name="learn_c_send_result1">返回结果1给 Activity B</string>
+    <string name="learn_c_cancel">取消 / 不返回结果</string>
+    <string name="learn_b_send_result2">返回结果2给 Activity A</string>
+    <string name="dialog_title_result_received">收到返回结果</string>
+    <string name="dialog_msg_result2">Activity A 确认收到来自 Activity B 的结果：\n\n【结果2】</string>
+    <string name="dialog_ok">确定</string>
+    <string name="status_log_title">状态与返回结果日志：</string>
+    <string name="status_waiting_b">等待启动 Activity B…</string>
+    <string name="status_received_param">接收到的参数与 RequestCode：\n%1$s</string>
+    <string name="status_waiting_c">等待启动 Activity C…</string>
+    <string name="status_success_received">【成功收到返回】\n匹配 RequestCode: %1$d\n返回结果内容: %2$s</string>
+    <string name="status_no_result">【未收到有效结果】\nActivity B 未返回数据或取消 (resultCode = %1$d)</string>
+    <string name="status_waiting_return">已发送请求，等待 Activity B 返回…</string>
+    <string name="status_b_received_c">【Activity B 收到 C 的结果1】\n匹配 RequestCode: %1$d\n返回内容: %2$s\n现在可将【结果2】返回给 Activity A。</string>
+    <string name="status_b_no_c">【Activity B 未收到 C 的结果1】\nActivity C 取消或未返回数据，不返回值给 Activity A。</string>
+
+    <!-- ARouter 链路测试扩展资源 -->
+    <string name="learn_d_title">Activity D (深层页面)</string>
+    <string name="learn_d_desc">Activity D 属于非关键深层页。从 C 页面进入 D 页面并返回，不影响 C 页面已经完成的【visit_c】打卡凭证。</string>
+    <string name="learn_d_back_to_c">返回 Activity C</string>
+    <string name="learn_a_launch_path1">路径1：A -> B -> C (中转跳转)</string>
+    <string name="learn_a_launch_path2">路径2：A -> C (直达关键页)</string>
+    <string name="learn_b_direct_return">直接返回 Activity A (未经过 C)</string>
+    <string name="learn_c_launch_d">前往 Activity D (C -> D -> C)</string>
+    <string name="learn_c_return_with_stamp">携【visit_c】凭证返回上一页 (B 或 A)</string>
+    <string name="dialog_msg_visit_c">Activity A 确认本次链路成功经过了关键页面 C (获取到【visit_c】打卡凭证)，允许弹出对话框！</string>
+    <string name="status_visit_c_success">【校验成功，已弹窗】\n获得了关键页打卡凭证：EXTRA_VISIT = visit_c</string>
+    <string name="status_visit_c_failed">【未经过关键页 C，不弹窗】\n未获得 visit_c 打卡凭证 (resultCode = %1$d)</string>
+    <string name="status_returned_from_d">已从 Activity D 返回 C，【visit_c】盖章凭证依然有效！</string>
 </resources>
