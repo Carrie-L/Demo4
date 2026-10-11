@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 主页面验证布局：首页/我的共用 Activity，首页另有频道。按钮只发起业务导航，频控由 Controller 负责。 -->
+<!-- 主页面验证布局：首页/我的共用 Activity，只有页面返回结果驱动一次频控判断。 -->
 <ScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -23,7 +23,7 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:baselineAligned="false">
-            <!-- 底部首页入口；点击后重新上报逻辑页面及宿主快照。 -->
+            <!-- 底部首页入口；点击只是切换 UI，不请求自动弹窗。 -->
             <Button
                 android:id="@+id/home_tab"
                 android:layout_width="0dp"
@@ -31,7 +31,7 @@
                 android:layout_height="wrap_content"
                 android:minHeight="48dp"
                 android:text="@string/home" />
-            <!-- 底部我的入口；与首页共用 Activity，但行为资格独立。 -->
+            <!-- 底部我的入口；与首页共用 Activity。 -->
             <Button
                 android:id="@+id/mine_tab"
                 android:layout_width="0dp"
@@ -92,42 +92,41 @@
                 android:text="@string/recommend"
                 android:textSize="16sp"
                 android:layout_marginBottom="12dp" />
-            <!-- 首页搜索框入口：先进入搜索激活页，结果出现前不算完成行为。 -->
-            <Button
-                android:id="@+id/search_box"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="48dp"
-                android:text="@string/search_box" />
-            <!-- 首页直接搜索入口：直接进入搜索结果页。 -->
-            <Button
-                android:id="@+id/direct_search"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="48dp"
-                android:text="@string/direct_search" />
-            <!-- 资讯入口：AI 频道使用 AI_ARTICLE，其余频道使用 OTHER。 -->
+            <!-- 推荐顶部搜索框、搜索按钮与扫一扫同一行。 -->
+            <LinearLayout android:id="@+id/search_row" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+                <!-- 搜索框点击后打开搜索激活页。 -->
+                <Button android:id="@+id/search_box" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="2" android:minHeight="48dp" android:text="@string/search_box" />
+                <!-- 搜索按钮直接打开搜索结果页。 -->
+                <Button android:id="@+id/direct_search" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:minHeight="48dp" android:text="@string/direct_search" />
+                <!-- 扫一扫访问后按原栈返回首页。 -->
+                <Button android:id="@+id/scan" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:minHeight="48dp" android:text="@string/scan" />
+            </LinearLayout>
+            <!-- 高亮暗词的 deeplink 在 Debug 面板切换真实落点。 -->
+            <Button android:id="@+id/highlight_keyword" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/highlight_keyword" />
+            <!-- 首页 AI 资讯列表入口；进入详情后按原页面栈返回。 -->
             <Button
                 android:id="@+id/news_card"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:minHeight="48dp"
                 android:text="@string/regular_article" />
+            <!-- 演示 AI 搜页面到 AI 快看二级列表的独立触发链。 -->
+            <Button android:id="@+id/ai_search_entry" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/ai_search_page" />
         </LinearLayout>
-        <!-- 我的工具入口容器，只能在我的页触发 MINE_TOOL。 -->
+        <!-- 我的工具入口容器，结果返回原我的页才检查 A。 -->
         <LinearLayout
             android:id="@+id/mine_content"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical">
-            <!-- 我的页书签入口，合法目标为 BOOKMARKS。 -->
+            <!-- 我的页书签入口，打开书签历史容器左 tab。 -->
             <Button
                 android:id="@+id/bookmarks"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:minHeight="48dp"
                 android:text="@string/bookmarks" />
-            <!-- 我的页历史入口，合法目标为 HISTORY。 -->
+            <!-- 我的页历史入口，打开同一容器的右 tab。 -->
             <Button
                 android:id="@+id/history"
                 android:layout_width="match_parent"
@@ -156,7 +155,7 @@
             android:layout_height="wrap_content"
             android:minHeight="48dp"
             android:text="@string/debug_panel" />
-        <!-- 仅 Debug 显示当前次数、已满足行为与诊断原因。 -->
+        <!-- 仅 Debug 显示两个弹窗的已展示次数。 -->
         <TextView
             android:id="@+id/guide_status"
             android:layout_width="match_parent"

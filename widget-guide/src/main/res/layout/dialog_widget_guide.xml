@@ -1,76 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A/B 共用弹窗布局：文案、预览与 deeplink 由 GuideContent 注入。ScrollView 支持内容溢出时滚动。 -->
-<ScrollView
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:fillViewport="true">
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="24dp">
-        <!-- 由 GuideContent 注入 A/B 标题，标记为无障碍标题。 -->
-        <TextView
-            android:id="@+id/guide_title"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textSize="22sp"
-            android:textStyle="bold"
-            android:textColor="?android:attr/textColorPrimary"
-            android:accessibilityHeading="true" />
-        <!-- 由 GuideContent 注入组件用途说明。 -->
-        <TextView
-            android:id="@+id/guide_description"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:textSize="15sp"
-            android:textColor="?android:attr/textColorSecondary" />
-        <!-- 组件预览图；运行时同步设置对应的无障碍描述。 -->
-        <ImageView
-            android:id="@+id/guide_preview"
-            android:contentDescription="@string/guide_preview_description"
-            android:layout_width="match_parent"
-            android:layout_height="160dp"
-            android:layout_marginTop="20dp"
-            android:scaleType="fitCenter" />
-        <LinearLayout
-            style="?attr/buttonBarStyle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:orientation="horizontal"
-            android:baselineAligned="false">
-            <!-- 通过 desktopDeeplink 打开桌面添加入口。 -->
-            <Button
-                style="?attr/buttonBarButtonStyle"
-                android:id="@+id/add_desktop"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="wrap_content"
-                android:minHeight="48dp"
-                android:text="@string/guide_add_desktop"
-                android:textSize="14sp" />
-            <!-- 通过 assistantDeeplink 打开负一屏添加入口。 -->
-            <Button
-                style="?attr/buttonBarButtonStyle"
-                android:id="@+id/add_assistant"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:minHeight="48dp"
-                android:text="@string/guide_add_assistant"
-                android:textSize="14sp" />
-        </LinearLayout>
-        <!-- 关闭已经展示的引导，不撤销首帧次数。 -->
-        <Button
-            android:id="@+id/close_guide"
-            style="@style/Widget.AppCompat.Button.Borderless"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minHeight="48dp"
-            android:text="@string/guide_later" />
+<!-- 两种组件共用一个底部弹窗，只替换文字、截图和链接。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="20dp">
+    <!-- 引导标题由当前组件填充。 -->
+    <TextView android:id="@+id/guide_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="20sp" android:accessibilityHeading="true" />
+    <!-- 对应组件的简短介绍。 -->
+    <TextView android:id="@+id/guide_description" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:textSize="15sp" />
+    <!-- 对应小组件截图由宿主提供。 -->
+    <ImageView android:id="@+id/widget_preview" android:layout_width="match_parent" android:layout_height="160dp" android:layout_marginTop="16dp" android:scaleType="fitCenter" />
+    <!-- 添加按钮固定横向排列。 -->
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:orientation="horizontal">
+        <!-- 左按钮进入桌面添加页。 -->
+        <Button android:id="@+id/add_desktop" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:minHeight="48dp" android:text="@string/guide_add_desktop" />
+        <!-- 右按钮进入负一屏添加页。 -->
+        <Button android:id="@+id/add_assistant" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="12dp" android:minHeight="48dp" android:text="@string/guide_add_assistant" />
     </LinearLayout>
-</ScrollView>
+</LinearLayout>

@@ -31,6 +31,8 @@
             android:layout_height="wrap_content"
             android:minHeight="48dp"
             android:text="@string/enable_pop" />
+        <!-- 演示高亮暗词 deeplink 可以实际进入普通资讯详情。 -->
+        <androidx.appcompat.widget.SwitchCompat android:id="@+id/highlight_to_news" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/highlight_to_news" />
         <TextView
             android:id="@+id/first_label"
             android:layout_width="match_parent"

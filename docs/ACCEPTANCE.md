@@ -1,6 +1,6 @@
 # B 分支：单测、验收与风险
 
-本清单对应 [系统设计](SYSTEM_DESIGN.md) 与 [接入说明](INTEGRATION.md)。**以下是待编码阶段实施的测试，不是已运行结果。** 现有源码和旧测试属于废弃方案，其通过不代表 B 方案通过。
+本清单对应 [系统设计](SYSTEM_DESIGN.md) 与 [接入说明](INTEGRATION.md)。B 分支已添加新的纯规则单测；下列页面链路和真机验收仍按表逐项执行。旧版测试已移除。
 
 ## 1. 怎么分配测试
 
@@ -40,60 +40,7 @@
 
 `thirdPopInterval` 的解析兼容用例在配置层测试：JSON 有 / 无该字段都得到相同业务规则；它不是第四次弹窗开关。
 
-下面为 JUnit 示例，针对接入说明中的 `canShowByFrequency`；需要在编码阶段加入正式测试源集并运行。
-
-```kotlin
-class GuideFrequencyTest {
-    private val zone = ZoneId.of("Asia/Shanghai")
-    private val rules = GuideRules(true, 1, 10)
-
-    private fun at(text: String): Long =
-        LocalDateTime.parse(text).atZone(zone).toInstant().toEpochMilli()
-
-    @Test
-    fun `首次有效返回没有单类型冷却`() {
-        assertTrue(canShowByFrequency(
-            GuideType.A, rules, GuideRecord(), at("2026-10-11T10:00:00"), zone
-        ))
-    }
-
-    @Test
-    fun `第二次需要足够的固定24小时`() {
-        val first = at("2026-10-11T10:00:00")
-        val record = GuideRecord(
-            a = TypeRecord(showCount = 1, lastShownAtMillis = first),
-            lastAnyShownAtMillis = first
-        )
-        val boundary = at("2026-10-12T10:00:00")
-        assertFalse(canShowByFrequency(GuideType.A, rules, record, boundary - 1, zone))
-        assertTrue(canShowByFrequency(GuideType.A, rules, record, boundary, zone))
-    }
-
-    @Test
-    fun `A用完三次不影响B的首次额度`() {
-        val last = at("2026-10-10T10:00:00")
-        val record = GuideRecord(
-            a = TypeRecord(showCount = 3, lastShownAtMillis = last),
-            lastAnyShownAtMillis = last
-        )
-        val now = at("2026-12-01T10:00:00")
-        assertFalse(canShowByFrequency(GuideType.A, rules, record, now, zone))
-        assertTrue(canShowByFrequency(GuideType.B, rules, record, now, zone))
-    }
-
-    @Test
-    fun `A今天展示后B首次也不能展示`() {
-        val last = at("2026-10-11T10:00:00")
-        val record = GuideRecord(
-            a = TypeRecord(showCount = 1, lastShownAtMillis = last),
-            lastAnyShownAtMillis = last
-        )
-        assertFalse(canShowByFrequency(
-            GuideType.B, rules, record, at("2026-10-11T18:00:00"), zone
-        ))
-    }
-}
-```
+已编码的核心规则测试位于 `widget-guide/src/test/java/com/carrie/widgetguide/GuidePolicyTest.kt`，使用固定时钟验证首次、两个冷却边界、两类独立三次上限、共享自然日、点击停止、零间隔、无效配置与时间回拨。其余表项是后续页面集成及真机验收标准。
 
 ## 3. 返回链路与机会消费测试
 

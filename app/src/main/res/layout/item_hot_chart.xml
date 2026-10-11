@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ViewPager2 的一页热搜榜：四个类别沿水平方向滑动。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="12dp">
+    <!-- 对应类别：游戏、电影电视、综艺、视频。 -->
+    <TextView android:id="@+id/chart_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="18sp" />
+    <!-- 演示榜单 item；电影电视与综艺跳搜索结果。 -->
+    <Button android:id="@+id/chart_item" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" />
+</LinearLayout>

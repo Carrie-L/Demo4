@@ -1,33 +1,23 @@
-package com.carrie.demo4
+package com.carrie.demo4 // 已有快服务添加界面的 Demo 替代落点。
 
-import android.os.Bundle
-import androidx.appcompat.app.AppCompatActivity
-import com.alibaba.android.arouter.facade.annotation.Route
-import com.carrie.demo4.databinding.ActivityWidgetAddBinding
-import com.carrie.widgetguide.core.*
+import android.os.Bundle // 生命周期参数。
+import androidx.appcompat.app.AppCompatActivity // 显示添加目标。
+import com.alibaba.android.arouter.facade.annotation.Route // Demo 添加页内部路由。
+import com.carrie.demo4.databinding.ActivityWidgetAddBinding // 添加页 XML。
 
-/**
- * 添加路由的验证落地页，仅显示 type 和 target，不实现真正小组件添加。
- * 正式迁移应改为已有桌面/负一屏添加能力，不得把打开本页当作添加成功。
- */
-@Route(path = "/widget/add")
-class WidgetAddActivity : AppCompatActivity() {
-    /**
-     * 显示收到的组件类型和目标位置，缺省 choose 表示手动选择入口。
-     */
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        val binding = ActivityWidgetAddBinding.inflate(layoutInflater)
-        setContentView(binding.root); binding.root.applySystemInsets()
-        binding.destination.text = getString(R.string.add_destination,
-            intent.getStringExtra("type") ?: "choose", intent.getStringExtra("target") ?: "choose")
-        binding.back.setOnClickListener { finish() }
-    }
-    /**
-     * 上报普通业务页；不会设置 everAdded，也不会永久关闭自动引导。
-     */
-    override fun onResume() {
-        super.onResume()
-        (application as GuideApplication).controller.visible(PageRef("widget-add", PageKind.OTHER))
-    }
-}
+/** 这里只显示收到的 deeplink 目标，不伪造小组件已添加。 */
+@Route(path = "/widget/add") // 弹窗左右按钮和设置 item 共同打开。
+class WidgetAddActivity : AppCompatActivity() { // 不反馈成功状态给引导模块。
+    override fun onCreate(savedInstanceState: Bundle?) { // 显示实际路由参数。
+        super.onCreate(savedInstanceState) // 系统创建完成。
+        val binding = ActivityWidgetAddBinding.inflate(layoutInflater) // 加载 XML。
+        setContentView(binding.root) // 设置添加落地页。
+        binding.root.applySystemInsets() // 安全区处理。
+        binding.destination.text = getString( // 展示 deeplink 的组件类型与位置。
+            R.string.add_destination, // 产品验收文本模板。
+            intent.getStringExtra("type") ?: "choose", // 设置页没有指定组件。
+            intent.getStringExtra("target") ?: "choose" // 设置页没有指定桌面或负一屏。
+        ) // 添加页文本结束。
+        binding.back.setOnClickListener { finish() } // 返回原 Activity。
+    } // 落地页初始化结束。
+} // 添加页结束。

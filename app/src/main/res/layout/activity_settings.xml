@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 手动添加入口，直接使用已有路由能力，不受自动频控限制、不增加次数。 -->
+<!-- 荣耀设备显示手动添加入口，点击不影响自动弹窗记录。 -->
 <ScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"

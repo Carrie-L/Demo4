@@ -1,177 +1,151 @@
-package com.carrie.demo4
+package com.carrie.demo4 // 首页和我的页由同一个 Activity 承载。
 
-import android.os.Bundle
-import android.view.View
-import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
-import com.alibaba.android.arouter.launcher.ARouter
-import com.carrie.demo4.databinding.ActivityMainBinding
-import com.carrie.widgetguide.core.*
-import com.carrie.widgetguide.ui.*
-import kotlinx.coroutines.launch
-import java.util.UUID
+import android.content.Intent // 读取页面返回的访问标记。
+import android.os.Bundle // 保存两个 tab 的 UI 位置。
+import android.view.View // 显示和隐藏对应内容。
+import androidx.activity.viewModels // 普通 ViewModel 保留旋转时的在途请求。
+import androidx.appcompat.app.AppCompatActivity // 页面宿主和返回回调。
+import androidx.lifecycle.Lifecycle // 判断页面是否已经恢复展示。
+import androidx.lifecycle.lifecycleScope // Debug 诊断读盘使用页面协程。
+import kotlinx.coroutines.launch // 读取完成后显示调试次数。
+import com.carrie.demo4.databinding.ActivityMainBinding // 首页 XML 绑定。
+import com.carrie.widgetguide.GuideContent // 两类弹窗的截图与文案。
+import com.carrie.widgetguide.GuideType // 类型名描述具体产品组件。
 
-/**
- * 验证主页面：底部首页/我的共用 Activity，首页另有四个频道。
- * 负责将真实可见位置映射到 PageRef 和 HostSnapshot，不在页面内实现业务频控。
- */
-class MainActivity : AppCompatActivity() {
-    /**
-     * 主页面 XML 的类型安全绑定，仅由当前 Activity 持有。
-     */
-    private lateinit var binding: ActivityMainBinding
-    /**
-     * 访问进程级依赖；使用 getter 保证调试重置后拿到新控制器。
-     */
-    private val app get() = application as GuideApplication
-    /**
-     * 当前 Activity 的展示适配器，销毁时从控制器解除连接。
-     */
-    private lateinit var guideHost: FragmentGuideHost
-    /**
-     * 逻辑主页面实例 ID，配置重建时从 Bundle 恢复。
-     */
-    private var rootId = ""
-    /**
-     * 底部位置：true 为我的，false 为首页。
-     */
-    private var mine = false
-    /**
-     * 首页频道下标：0 推荐（默认）、1 AI 快看、2 体育、3 地区。
-     */
-    private var channel = 0
-    /**
-     * 已完成 onPostResume 且尚未 onPause，作为能否展示的条件之一。
-     */
-    private var resumed = false
-    /**
-     * 每次位置/前后台有效性更新后递增，防止 IO 期间离开又回来的旧请求通过。
-     */
-    private var version = 0L
-    /**
-     * 将同一 Activity 内的 Tab/频道编码为不同逻辑页面实例。
-     * 例如 root:home:0 和 root:home:1；不能只用 rootId 代表所有频道。
-     */
-    private val currentPage get() = PageRef(rootId + if (mine) ":mine" else ":home:$channel", when {
-        mine -> PageKind.MINE
-        channel == 1 -> PageKind.HOME_AI
-        else -> PageKind.HOME_OTHER
-    })
+/** 只有从自身发起并匹配访问标记的返回，才产生一次弹窗检查。 */
+class MainActivity : AppCompatActivity() { // 冷启没有 pendingReturn，不能弹窗。
+    private lateinit var binding: ActivityMainBinding // 当前页面的 ViewBinding。
+    private val app get() = application as GuideApplication // 读取唯一管理器及 Debug 配置。
+    private val guideReturn: GuideReturnState by viewModels() // 不将行为资格保存进 SP。
+    private var mine = false // 底部位置，false 为首页。
+    private var channel = 0 // 顶部频道：0 推荐、1 AI 快看、2 体育、3 地区。
+    private var pendingReturn: Int? = null // 仅在本次回调与页面恢复之间交接。
 
-    /**
-     * 恢复页面身份和选中位置，组装宿主与内容提供者，绑定业务入口。
-     * 页面点击只发起路由；行为由目标页面实际进入后上报。
-     */
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        rootId = savedInstanceState?.getString("rootId") ?: UUID.randomUUID().toString()
-        mine = savedInstanceState?.getBoolean("mine") ?: false
-        channel = savedInstanceState?.getInt("channel") ?: 0
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-        binding.root.applySystemInsets()
-        // snapshot lambda 每次读取最新位置；GuideContentProvider 仅负责对应 A/B 的内容。
-        guideHost = FragmentGuideHost(this, { HostSnapshot(rootId, version, when {
-            mine -> Surface.MINE
-            channel == 1 -> Surface.HOME_AI
-            else -> Surface.HOME_OTHER
-        }, resumed && !isFinishing && !supportFragmentManager.isStateSaved) }, GuideContentProvider { type ->
-            val tools = type == GuideType.TOOLS
-            GuideContent(getString(if (tools) R.string.tools_title else R.string.ai_title),
-                getString(if (tools) R.string.tools_description else R.string.ai_description),
-                if (tools) R.drawable.preview_tools else R.drawable.preview_news,
-                getString(R.string.preview_description),
-                "demo4://guide/widget/add?type=${if (tools) "tools" else "ai"}&target=desktop",
-                "demo4://guide/widget/add?type=${if (tools) "tools" else "ai"}&target=assistant")
-        }, DemoNavigation.navigator(this))
-        // 首页/我的与首页频道都必须经过 renderLocation 更新业务位置。
-        binding.homeTab.setOnClickListener { mine = false; renderLocation() }
-        binding.mineTab.setOnClickListener { mine = true; renderLocation() }
-        listOf(binding.recommendChannel, binding.aiChannel, binding.sportsChannel, binding.localChannel)
-            .forEachIndexed { index, button -> button.setOnClickListener { channel = index; renderLocation() } }
-        // 入口类型在可信点击处理处指定，目标页不能仅凭自身 PageKind 推断行为。
-        binding.searchBox.setOnClickListener { open(PageKind.SEARCH_ACTIVE, EntryPoint.HOME_SEARCH_BOX) }
-        binding.directSearch.setOnClickListener { open(PageKind.SEARCH_RESULTS, EntryPoint.HOME_SEARCH_BUTTON) }
-        binding.newsCard.setOnClickListener { open(PageKind.NEWS_DETAIL,
-            if (channel == 1) EntryPoint.AI_ARTICLE else EntryPoint.OTHER) }
-        binding.bookmarks.setOnClickListener { open(PageKind.BOOKMARKS, EntryPoint.MINE_TOOL) }
-        binding.history.setOnClickListener { open(PageKind.HISTORY, EntryPoint.MINE_TOOL) }
-        binding.downloads.setOnClickListener { open(PageKind.DOWNLOADS, EntryPoint.MINE_TOOL) }
-        binding.settings.setOnClickListener { ARouter.getInstance().build("/settings/main").navigation(this) }
-        // 调试入口和状态文本仅 Debug 可见；DebugActivity 本身还有 Release 防护。
-        binding.debugPanel.visibility = if (BuildConfig.DEBUG) View.VISIBLE else View.GONE
-        binding.guideStatus.visibility = if (BuildConfig.DEBUG) View.VISIBLE else View.GONE
-        binding.debugPanel.setOnClickListener { ARouter.getInstance().build("/debug/guide").navigation(this) }
-        renderLocation()
-    }
+    override fun onCreate(savedInstanceState: Bundle?) { // 建立首页、我的及其业务入口。
+        super.onCreate(savedInstanceState) // 恢复系统页面生命周期。
+        mine = savedInstanceState?.getBoolean("mine") ?: false // 只恢复 UI tab。
+        channel = savedInstanceState?.getInt("channel") ?: 0 // 只恢复顶部频道。
+        binding = ActivityMainBinding.inflate(layoutInflater) // 加载 Kotlin + XML 页面。
+        setContentView(binding.root) // 显示主页面。
+        binding.root.applySystemInsets() // 适配状态栏和导航栏。
+        binding.homeTab.setOnClickListener { mine = false; pendingReturn = null; renderLocation() } // 切回首页不补弹。
+        binding.mineTab.setOnClickListener { mine = true; pendingReturn = null; renderLocation() } // 切到我的不补弹。
+        listOf(binding.recommendChannel, binding.aiChannel, binding.sportsChannel, binding.localChannel) // 四个顶部频道。
+            .forEachIndexed { index, button -> button.setOnClickListener { channel = index; pendingReturn = null; renderLocation() } } // 切 tab 丢弃过期结果。
+        binding.searchBox.setOnClickListener { open(DemoPage.SEARCH_ACTIVATION, GuideResultContract.HOME_SEARCH) } // 搜索框到激活页。
+        binding.directSearch.setOnClickListener { open(DemoPage.SEARCH_RESULTS, GuideResultContract.HOME_SEARCH) } // 搜索按钮到结果页。
+        binding.highlightKeyword.setOnClickListener { // 暗词根据实际 deeplink 决定落点。
+            if (guideReturn.waitingRequestCode != null) return@setOnClickListener // 避免多次点击。
+            guideReturn.waitingRequestCode = GuideResultContract.HOME_SEARCH // 首页等待一次搜索类返回。
+            DemoNavigation.highlight(this, app.highlightDeeplink) { clearWaiting(GuideResultContract.HOME_SEARCH) } // 只认结果页标记。
+        } // 高亮暗词入口结束。
+        binding.scan.setOnClickListener { open(DemoPage.SCANNER, GuideResultContract.HOME_SCAN) } // 扫一扫返回首页检查 A。
+        binding.newsCard.setOnClickListener { // 首页 AI 与普通频道新闻入口不同。
+            if (channel == 1) open(DemoPage.NEWS_DETAIL, GuideResultContract.HOME_AI_DETAIL) // AI 列表资讯可触发 B。
+            else DemoNavigation.page(this, DemoPage.NEWS_DETAIL) // 普通资讯不触发引导。
+        } // 资讯入口结束。
+        binding.aiSearchEntry.setOnClickListener { DemoNavigation.page(this, DemoPage.AI_SEARCH) } // AI 搜进入其自己的页面。
+        binding.bookmarks.setOnClickListener { open(DemoPage.TOOLS, GuideResultContract.MINE_TOOLS, "bookmarks") } // 共用工具页左 tab。
+        binding.history.setOnClickListener { open(DemoPage.TOOLS, GuideResultContract.MINE_TOOLS, "history") } // 共用工具页右 tab。
+        binding.downloads.setOnClickListener { open(DemoPage.DOWNLOADS, GuideResultContract.MINE_TOOLS) } // 下载工具页。
+        binding.settings.setOnClickListener { DemoNavigation.settings(this) } // 我的设置入口。
+        binding.debugPanel.visibility = if (BuildConfig.DEBUG) View.VISIBLE else View.GONE // Debug 仅展示验证面板。
+        binding.guideStatus.visibility = if (BuildConfig.DEBUG) View.VISIBLE else View.GONE // Debug 才显示次数。
+        binding.debugPanel.setOnClickListener { DemoNavigation.debug(this) } // 配置与时钟调试。
+        renderLocation() // 初始推荐 tab 只画 UI，不检查弹窗。
+    } // 主页面创建结束。
 
-    /**
-     * 使用当前逻辑页面作为真实来源，不根据将要跳到哪里反推来源。
-     */
-    private fun open(kind: PageKind, entry: EntryPoint) = DemoNavigation.page(this, currentPage, kind, entry)
+    private fun clearWaiting(code: Int) { // 路由失败时释放当前等待关系。
+        runOnUiThread { if (guideReturn.waitingRequestCode == code) guideReturn.waitingRequestCode = null } // 异步回调也回主线程。
+    } // 路由失败处理结束。
 
-    /**
-     * 刷新 Tab/频道 UI 并递增位置版本；仅页面已恢复可见时报告可见页。
-     * 首页搜索控件只在推荐频道展示，但已完成搜索行为可在首页其他频道用于 A。
-     */
-    private fun renderLocation() {
-        version++
-        binding.homeContent.visibility = if (mine) View.GONE else View.VISIBLE
-        binding.mineContent.visibility = if (mine) View.VISIBLE else View.GONE
-        binding.channelName.text = resources.getStringArray(R.array.channels)[channel]
-        binding.homeTab.isSelected = !mine; binding.mineTab.isSelected = mine
-        listOf(binding.recommendChannel, binding.aiChannel, binding.sportsChannel, binding.localChannel)
-            .forEachIndexed { index, button -> button.isSelected = channel == index }
-        binding.searchBox.visibility = if (channel == 0) View.VISIBLE else View.GONE
-        binding.directSearch.visibility = if (channel == 0) View.VISIBLE else View.GONE
-        binding.newsCard.text = getString(if (channel == 1) R.string.ai_article else R.string.regular_article)
-        if (resumed) { app.controller.visible(currentPage); app.controller.refresh() }
-    }
+    private fun open(kind: DemoPage, code: Int, tab: String? = null) { // 相关页面共用一套启动方式。
+        if (guideReturn.waitingRequestCode != null) return // 一次只接收一个结果关系。
+        guideReturn.waitingRequestCode = code // 标记当前原入口正等待此业务返回。
+        DemoNavigation.page(this, kind, code, tab) { clearWaiting(code) } // ARouter 启动并关联 requestCode。
+    } // 页面启动结束。
 
-    /**
-     * 页面恢复后连接宿主、上报实际位置、请求资格重算，并订阅诊断状态。
-     * FragmentManager 已可提交后再提供展示能力，避免在保存状态阶段显示窗口。
-     */
-    override fun onPostResume() {
-        super.onPostResume()
-        resumed = true; version++
-        app.controller.attach(guideHost)
-        app.controller.visible(currentPage)
-        app.controller.refresh()
-        // 本页停止期间，调试重置可能已经替换 Controller，因此重新建立订阅。
-        statusJob?.cancel()
-        statusJob = lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                app.controller.status.collect { status ->
-                    val state = status.state
-                    binding.guideStatus.text = getString(R.string.guide_status,
-                        state?.records?.count { it.type == GuideType.TOOLS } ?: 0,
-                        state?.records?.count { it.type == GuideType.AI_NEWS } ?: 0,
-                        state?.behaviors?.joinToString().orEmpty(), status.message)
-                }
-            }
-        }
-    }
-    /**
-     * 诊断流收集任务；每次恢复重建订阅，以兼容调试面板替换控制器。
-     */
-    private var statusJob: kotlinx.coroutines.Job? = null
+    private fun renderLocation() { // 只按当前选择渲染 UI。
+        binding.homeContent.visibility = if (mine) View.GONE else View.VISIBLE // 首页与我的互斥。
+        binding.mineContent.visibility = if (mine) View.VISIBLE else View.GONE // 展示我的工具。
+        binding.homeTab.isSelected = !mine // 标记底部首页。
+        binding.mineTab.isSelected = mine // 标记底部我的。
+        binding.channelName.text = resources.getStringArray(R.array.channels)[channel] // 当前频道名称。
+        listOf(binding.recommendChannel, binding.aiChannel, binding.sportsChannel, binding.localChannel) // 顶部四频道。
+            .forEachIndexed { index, button -> button.isSelected = channel == index } // 只高亮当前 tab。
+        val isRecommend = channel == 0 // Demo 的搜索区位于推荐。
+        binding.searchRow.visibility = if (isRecommend) View.VISIBLE else View.GONE // 搜索框、按钮、扫一扫共一行。
+        binding.highlightKeyword.visibility = if (isRecommend) View.VISIBLE else View.GONE // 暗词按配置实际落点导航。
+        binding.newsCard.visibility = if (channel == 1) View.VISIBLE else View.GONE // AI 资讯列表入口。
+        binding.aiSearchEntry.visibility = if (channel == 1) View.VISIBLE else View.GONE // AI 搜的二级流程。
+    } // UI 刷新结束。
 
-    /**
-     * 立即使快照失效并触发取消/重算，底部 Tab 仍选中不意味着页面可展示。
-     */
-    override fun onPause() { resumed = false; version++; app.controller.refresh(); super.onPause() }
-    /**
-     * 解除当前宿主连接，避免进程级控制器继续持有已销毁 Activity。
-     */
-    override fun onDestroy() { app.controller.detach(guideHost); super.onDestroy() }
-    /**
-     * 仅保存 UI 身份与选中位置；行为、次数由 SP 管理，未完成搜索链路不随 Bundle 恢复。
-     */
-    override fun onSaveInstanceState(outState: Bundle) {
-        outState.putString("rootId", rootId); outState.putBoolean("mine", mine); outState.putInt("channel", channel)
-        super.onSaveInstanceState(outState)
-    }
-}
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) { // Android 按原调用关系交付结果。
+        super.onActivityResult(requestCode, resultCode, data) // 保留 AppCompat 及原业务结果分发。
+        if (guideReturn.waitingRequestCode != requestCode) return // 忽略不是此轮发起的结果。
+        guideReturn.waitingRequestCode = null // 先消费，再检查标记，防止重复回调。
+        val expected = GuideResultContract.expectedVisit(requestCode) ?: return // 未知请求码不做引导。
+        if (data?.getStringExtra(GuideResultContract.EXTRA_VISIT) != expected) return // 实际落点必须正确。
+        pendingReturn = requestCode // 只交给本次紧邻的恢复阶段。
+        consumePendingIfReady() // 若已经恢复，立即处理；否则等 onPostResume。
+    } // 返回结果处理结束。
+
+    override fun onPostResume() { // 可能先收到结果，后完成宿主恢复。
+        super.onPostResume() // 确保系统恢复回调完成。
+        consumePendingIfReady() // 冷启没有 pending，不会调用管理器。
+        refreshDebugStatus() // 仅刷新可见诊断文字，不触发引导。
+    } // 页面恢复完成。
+
+    private fun consumePendingIfReady() { // 一次结果最多请求一次自动引导。
+        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return // 尚不可展示时留给紧接的恢复。
+        val request = pendingReturn ?: return // 没有此轮回传，直接结束。
+        pendingReturn = null // 频次未到也不保留行为资格。
+        if (!isExpectedLocation(request)) return // 入口 tab 不匹配就放弃。
+        val type = if (request == GuideResultContract.HOME_AI_DETAIL) GuideType.AI_QUICK_NEWS else GuideType.COMMON_TOOLS // 只按本入口决定类型。
+        app.guideManager.tryShow(this, type, content(type), { isExpectedLocation(request) }, DemoNavigation::openAdd) // 管理器只检查本轮一次。
+    } // 本轮返回消费结束。
+
+    private fun isExpectedLocation(request: Int): Boolean { // 不需要记录全局页面栈。
+        val active = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) && !isFinishing && !isDestroyed // 宿主必须可见。
+        return active && when (request) { // 检查当前两个层级的 tab。
+            GuideResultContract.HOME_SEARCH, GuideResultContract.HOME_SCAN -> !mine && channel != 1 // A 位于首页非 AI tab。
+            GuideResultContract.MINE_TOOLS -> mine // 工具 A 位于我的底部。
+            GuideResultContract.HOME_AI_DETAIL -> !mine && channel == 1 // B 位于首页 AI tab。
+            else -> false // 其他结果不属于主页面。
+        } // 位置判断结束。
+    } // 展示位置检查结束。
+
+    private fun content(type: GuideType): GuideContent { // 两类组件共用底部 XML。
+        val tools = type == GuideType.COMMON_TOOLS // 选择常用工具或 AI 快看资源。
+        val component = if (tools) "tools" else "ai" // Demo 添加路由参数。
+        return GuideContent( // 提供当前类型的文案、截图和两种链接。
+            getString(if (tools) R.string.tools_title else R.string.ai_title), // 引导标题。
+            getString(if (tools) R.string.tools_description else R.string.ai_description), // 功能说明。
+            if (tools) R.drawable.preview_tools else R.drawable.preview_news, // 对应截图占位资源。
+            getString(R.string.preview_description), // 图片无障碍描述。
+            "demo4://guide/widget/add?type=$component&target=desktop", // 左边添加到桌面。
+            "demo4://guide/widget/add?type=$component&target=assistant" // 右边添加到负一屏。
+        ) // 内容绑定结束。
+    } // 内容提供结束。
+
+    private fun refreshDebugStatus() { // Debug 可观察已记录次数。
+        if (!BuildConfig.DEBUG) return // 正式构建不显示状态。
+        val record = app.guideManager // 获取同一个管理器。
+        lifecycleScope.launch { // 读取磁盘可能需要 IO。
+            val state = runCatching { record.snapshot() }.getOrNull() ?: return@launch // 损坏记录不伪造次数。
+            binding.guideStatus.text = getString(R.string.guide_status, state.commonTools.showCount, state.aiQuickNews.showCount) // 显示真实次数。
+        } // Debug 状态查询结束。
+    } // 状态渲染结束。
+
+    override fun onStop() { // 离开原宿主时丢弃未消费结果。
+        pendingReturn = null // 后台再回来不能凭旧结果弹窗。
+        app.guideManager.dismissForOwner(this) // 关闭当前宿主正在显示的底部 Dialog。
+        super.onStop() // 完成系统生命周期回调。
+    } // 宿主离开结束。
+
+    override fun onSaveInstanceState(outState: Bundle) { // 只保存 UI 选中位置。
+        outState.putBoolean("mine", mine) // 恢复底部首页 / 我的。
+        outState.putInt("channel", channel) // 恢复首页顶部频道。
+        super.onSaveInstanceState(outState) // 不保存待弹资格。
+    } // UI 状态保存结束。
+} // 首页和我的页结束。

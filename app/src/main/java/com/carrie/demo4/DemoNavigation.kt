@@ -1,71 +1,62 @@
-package com.carrie.demo4
+package com.carrie.demo4 // 路由只负责打开页面，返回仍走系统栈。
 
-import android.content.Context
-import android.net.Uri
-import android.view.View
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import com.alibaba.android.arouter.launcher.ARouter
-import com.carrie.widgetguide.core.*
-import com.carrie.widgetguide.ui.WidgetGuideNavigator
-import java.util.UUID
+import android.app.Activity // 带 requestCode 的 ARouter 需要当前 Activity。
+import android.net.Uri // 演示暗词和添加页 deeplink 的实际解析。
+import android.view.View // 保留原布局的 Insets 辅助方法。
+import androidx.core.view.ViewCompat // 对根视图安装系统栏 Insets。
+import androidx.core.view.WindowInsetsCompat // 读取系统栏与刘海尺寸。
+import com.alibaba.android.arouter.facade.Postcard // 接收路由回调中的目标。
+import com.alibaba.android.arouter.facade.callback.NavigationCallback // 路由失败时清除等待关系。
+import com.alibaba.android.arouter.launcher.ARouter // 保留项目原有跳转框架。
 
-/**
- * 验证宿主的路由适配层：负责生成可信的页面身份和入口信息，不在点击时确认行为。
- * 正式项目可替换为现有 ARouter 封装；核心模块不依赖 ARouter。
- */
-object DemoNavigation {
-    /**
-     * 打开一个新的验证业务页；目标 DetailActivity 初次创建时上报 NavigationEvent。
-     * @param context 发起导航的页面上下文。
-     * @param from 当前真实可见页实例，作为 fromId/fromKind 传递。
-     * @param to 目标业务类型，作为 pageKind 传递；pageId 为此次新页面生成。
-     * @param entry 用户点击的业务入口，默认 OTHER 不授予特殊行为资格。
-     * pageId 标识页面实例；navigationId 标识导航动作，两者必须分别生成。
-     * 路由失败时目标页不会创建，因此不会上报成功进入。
-     */
-    fun page(context: Context, from: PageRef, to: PageKind, entry: EntryPoint = EntryPoint.OTHER) {
-        ARouter.getInstance().build("/browser/page")
-            // pageId/pageKind 组合为目标 PageRef；每次打开新实例生成新 ID。
-            .withString("pageId", UUID.randomUUID().toString())
-            .withString("pageKind", to.name)
-            // 来源使用当前可见实例，不能用路由地址或 Activity 类名替代。
-            .withString("fromId", from.id).withString("fromKind", from.kind.name)
-            // 入口说明跳转原因；navigationId 单独标识这次动作，用于重复上报去重。
-            .withString("entry", entry.name).withString("navigationId", UUID.randomUUID().toString())
-            .navigation(context)
-    }
+/** 相关页面通过 ARouter 打开，绝不为了返回再 startActivity(Main)。 */
+object DemoNavigation { // Demo 单处封装路由地址。
+    fun settings(activity: Activity) { ARouter.getInstance().build("/settings/main").navigation(activity) } // 我的设置页。
+    fun debug(activity: Activity) { ARouter.getInstance().build("/debug/guide").navigation(activity) } // Debug 配置面板。
+    fun page(activity: Activity, kind: DemoPage, requestCode: Int? = null, selectedTab: String? = null, onFailure: () -> Unit = {}) { // 入口可请求 Android 结果。
+        val route = ARouter.getInstance().build("/browser/page").withString("pageKind", kind.name) // 实际打开的页面类型。
+        if (selectedTab != null) route.withString("selectedTab", selectedTab) // 书签和历史复用同一工具页。
+        if (requestCode == null) route.navigation(activity) // 普通中间页不需要回传。
+        else route.navigation(activity, requestCode, object : NavigationCallback { // 相关入口请求结果。
+            override fun onFound(postcard: Postcard?) {} // 找到路由不代表用户已访问关键页。
+            override fun onLost(postcard: Postcard?) { onFailure() } // 路由失败清除等待状态。
+            override fun onArrival(postcard: Postcard?) {} // 到达路由回调不能触发弹窗。
+            override fun onInterrupt(postcard: Postcard?) { onFailure() } // 拦截导航同样清理等待。
+        }) // ARouter 的结果启动结束。
+    } // 通用业务页导航结束。
 
-    /**
-     * 创建添加入口适配器，仅接受 demo4://guide/widget/add。
-     * 参数 type：tools / ai / choose；target：desktop / assistant / choose。
-     * 缺省 choose 用于设置页手动入口。返回 true 只表示已调用路由，不代表小组件添加成功。
-     * 迁移时替换为正式 deeplink，并按真实路由回调/错误处理定义跳转是否已接受。
-     */
-    fun navigator(context: Context) = WidgetGuideNavigator { deeplink ->
-        val uri = Uri.parse(deeplink)
-        if (uri.scheme != "demo4" || uri.host != "guide" || uri.path != "/widget/add") false
-        else {
-            ARouter.getInstance().build("/widget/add")
-                .withString("type", uri.getQueryParameter("type") ?: "choose")
-                .withString("target", uri.getQueryParameter("target") ?: "choose")
-                .navigation(context)
-            true
-        }
-    }
-}
+    fun highlight(activity: Activity, deeplink: String, onFailure: () -> Unit) { // 高亮暗词由 deeplink 决定真实目标。
+        val uri = Uri.parse(deeplink) // 解析 Demo 配置给出的内部链接。
+        val destination = when ("${uri.scheme}://${uri.host}${uri.path}") { // 只信任白名单路径。
+            "demo4://search/results" -> DemoPage.SEARCH_RESULTS // 搜索结果会回传 SEARCH_RESULTS。
+            "demo4://news/detail" -> DemoPage.NEWS_DETAIL // 普通资讯不回传搜索标记。
+            else -> null // 不认识的 deeplink 不创造访问结果。
+        } // deeplink 分流结束。
+        if (destination == null) onFailure() // 解析失败时释放入口等待。
+        else page(activity, destination, GuideResultContract.HOME_SEARCH, onFailure = onFailure) // 始终按实际页面标记验证。
+    } // 暗词导航结束。
 
-/**
- * 以初始 padding 为基准添加系统栏和刘海 Insets，避免重复分发时累计边距。
- * 由每个验证页面设置内容后调用一次，处理 edge-to-edge 下的内容遮挡。
- */
-fun View.applySystemInsets() {
-    val startLeft = paddingLeft; val startTop = paddingTop
-    val startRight = paddingRight; val startBottom = paddingBottom
-    ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
-        val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-        view.setPadding(startLeft + bars.left, startTop + bars.top, startRight + bars.right, startBottom + bars.bottom)
-        insets
-    }
-    ViewCompat.requestApplyInsets(this)
-}
+    fun openAdd(activity: Activity, deeplink: String): Boolean { // 弹窗和设置页共用添加页分发。
+        val uri = Uri.parse(deeplink) // 从产品提供的链接解析目标。
+        if (uri.scheme != "demo4" || uri.host != "guide" || uri.path != "/widget/add") return false // Demo 只接受已实现链接。
+        ARouter.getInstance().build("/widget/add") // 不请求结果，不查询组件添加状态。
+            .withString("type", uri.getQueryParameter("type") ?: "choose") // 演示组件类型。
+            .withString("target", uri.getQueryParameter("target") ?: "choose") // 演示桌面或负一屏。
+            .navigation(activity) // 用户点击后的现有路由行为。
+        return true // true 只表示已请求打开，不代表添加成功。
+    } // 添加 deeplink 分发结束。
+} // 路由辅助结束。
+
+/** 保留原工程的安全区适配，避免内容压到状态栏和导航栏。 */
+fun View.applySystemInsets() { // 在每个根视图设置一次。
+    val left = paddingLeft // 保存初始左边距。
+    val top = paddingTop // 保存初始上边距。
+    val right = paddingRight // 保存初始右边距。
+    val bottom = paddingBottom // 保存初始下边距。
+    ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets -> // Insets 重发时不累加旧值。
+        val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()) // 包含导航栏和刘海。
+        view.setPadding(left + bars.left, top + bars.top, right + bars.right, bottom + bars.bottom) // 恢复基准后加入安全区。
+        insets // 保留后续分发能力。
+    } // Insets 监听结束。
+    ViewCompat.requestApplyInsets(this) // 请求初次同步系统栏尺寸。
+} // 根视图适配结束。

@@ -41,6 +41,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.activity:activity-ktx:1.10.1")
+    implementation("androidx.viewpager2:viewpager2:1.1.0") // 搜索激活页四类横向热搜榜。
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
     implementation("com.alibaba:arouter-api:1.5.2") {

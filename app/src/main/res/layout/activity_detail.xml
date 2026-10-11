@@ -1,65 +1,51 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 通用业务页验证布局：支持插入任意中间跳转，验证未完成搜索链路与已完成行为的不同保留规则。 -->
-<ScrollView
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:fillViewport="true">
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="20dp">
-        <!-- 根据 PageKind 展示当前业务页名称。 -->
-        <TextView
-            android:id="@+id/page_title"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/other_page"
-            android:textSize="16sp"
-            android:layout_marginBottom="12dp"
-            android:accessibilityHeading="true" />
-        <TextView
-            android:id="@+id/help"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/detail_help"
-            android:textSize="16sp"
-            android:layout_marginBottom="12dp" />
-        <!-- 普通来源进入激活页，默认 OTHER，不能伪造首页搜索来源。 -->
-        <Button
-            android:id="@+id/to_search_active"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minHeight="48dp"
-            android:text="@string/go_search_active" />
-        <!-- 激活页使用 SEARCH_SUBMIT；其余来源仅作为普通导航。 -->
-        <Button
-            android:id="@+id/to_results"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minHeight="48dp"
-            android:text="@string/go_results" />
-        <!-- 插入其他业务页，验证绕行会切断未完成搜索链路。 -->
-        <Button
-            android:id="@+id/to_other"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minHeight="48dp"
-            android:text="@string/go_other" />
-        <!-- 清除上方验证页面，返回原主页面与原选中位置。 -->
-        <Button
-            android:id="@+id/return_main"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minHeight="48dp"
-            android:text="@string/return_main" />
-        <!-- 返回上一页面，页面恢复时由生命周期报告 visible。 -->
-        <Button
-            android:id="@+id/back"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minHeight="48dp"
-            android:text="@string/back" />
+<!-- 复用的业务页验证布局，所有返回都结束当前页并沿原页面栈回退。 -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true">
+    <!-- 用纵向内容承载不同类型的业务页面。 -->
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="20dp">
+        <!-- 展示当前实际落点。 -->
+        <TextView android:id="@+id/page_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="20sp" android:accessibilityHeading="true" />
+        <!-- 引导开发验证者按原栈返回。 -->
+        <TextView android:id="@+id/help" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/detail_help" />
+        <!-- 搜索激活页内容只在该页出现。 -->
+        <LinearLayout android:id="@+id/activation_panel" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+            <!-- 顶部搜索框与搜索按钮。 -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+                <!-- 当前搜索词可由用户输入。 -->
+                <EditText android:id="@+id/search_input" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:minHeight="48dp" android:hint="@string/search_box" android:inputType="text" />
+                <!-- 点击进入搜索结果。 -->
+                <Button android:id="@+id/search_submit" android:layout_width="wrap_content" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/direct_search" />
+            </LinearLayout>
+            <!-- 搜索历史排在猜你想搜之前。 -->
+            <Button android:id="@+id/search_history" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/search_history" />
+            <!-- 猜你想搜进入搜索结果。 -->
+            <Button android:id="@+id/guess_search" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/guess_search" />
+            <!-- 热搜榜标题在横向 ViewPager2 上方。 -->
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/hot_chart" android:textSize="18sp" />
+            <!-- 横向四页：游戏、电影电视、综艺、视频。 -->
+            <androidx.viewpager2.widget.ViewPager2 android:id="@+id/hot_pager" android:layout_width="match_parent" android:layout_height="150dp" android:orientation="horizontal" />
+        </LinearLayout>
+        <!-- 书签与历史位于同一个 Activity 的左右 tab。 -->
+        <LinearLayout android:id="@+id/tool_tabs" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+            <!-- 左右 tab 的按钮行。 -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+                <!-- 左侧书签。 -->
+                <Button android:id="@+id/bookmarks_tab" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:minHeight="48dp" android:text="@string/bookmarks" />
+                <!-- 右侧历史。 -->
+                <Button android:id="@+id/history_tab" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:minHeight="48dp" android:text="@string/history" />
+            </LinearLayout>
+            <!-- 当前 tab 的列表标题占位。 -->
+            <TextView android:id="@+id/tool_tab_content" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="16sp" />
+        </LinearLayout>
+        <!-- AI 搜打开 AI 快看二级列表。 -->
+        <Button android:id="@+id/ai_secondary" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/ai_secondary_page" />
+        <!-- AI 快看二级列表打开资讯详情。 -->
+        <Button android:id="@+id/ai_article" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/ai_article" />
+        <!-- 激活页的额外搜索入口。 -->
+        <Button android:id="@+id/to_results" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/go_results" />
+        <!-- 模拟关键页后继续进入任意普通业务页。 -->
+        <Button android:id="@+id/to_other" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/go_other" />
+        <!-- 页面顶部返回与系统返回相同，只 finish 当前页面。 -->
+        <Button android:id="@+id/back" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/back" />
     </LinearLayout>
 </ScrollView>

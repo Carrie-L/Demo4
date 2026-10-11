@@ -4,7 +4,7 @@
 
 **按普通页面栈返回设计：打开页面使用 ARouter；返回使用系统返回键、返回手势或页面的 `finish()`。返回时不重新启动首页。**
 
-原先方案废弃。本文是后续编码依据，配套 [接入示例](INTEGRATION.md) 和 [单测、验收与风险](ACCEPTANCE.md)。本次提交只有文档；现存业务源码及旧测试尚未改为 B 方案。
+原先方案废弃。本文是 B 分支代码依据，配套 [接入说明](INTEGRATION.md) 和 [单测、验收与风险](ACCEPTANCE.md)。仓库已按此方案替换旧的页面事件与持久资格逻辑。
 
 ## 1. 先用一条搜索流程说明
 
@@ -80,7 +80,7 @@ B 的二级页路径在返回二级列表时检查，不能继续传给 AI 搜�
 |---|---|---|
 | 页面结果回传 | 相关入口及关键业务页 | 打开时使用 requestCode；关键页准备访问标记；返回入口后发起一次检查 |
 | 引导管理器 `WidgetGuideManager` | 单进程共享一个实例 | 读取配置与本地记录，判断频次，记录展示和点击停止；内部用简单存储类读写 SP/MMKV |
-| 底部弹窗 `WidgetGuideDialog` | 当前展示页面持有 | Kotlin + XML，绑定标题、截图、两个按钮，处理取消与添加 |
+| 底部 Dialog | 当前展示页面持有 | Kotlin + XML，绑定标题、截图、两个按钮，处理取消与添加 |
 
 管理器不认识搜索激活页、下载页或其他页面，也不维护路由记录。业务页面已确定本次是 A 还是 B，管理器只接收类型和当前展示宿主。
 
@@ -91,7 +91,7 @@ B 的二级页路径在返回二级列表时检查，不能继续传给 AI 搜�
 | `GuideResultContract.kt` | requestCode、访问标记，以及二者与弹窗类型的对应关系 |
 | `WidgetGuideManager.kt` | 频次判断、展示入口、展示计数、添加点击停止 |
 | `GuideStore.kt` | 小型 SP 实现；项目已有 MMKV 时替换读写即可 |
-| `WidgetGuideDialog.kt`、`dialog_widget_guide.xml` | 底部弹窗 |
+| `WidgetGuideManager.kt`、`dialog_widget_guide.xml` | 普通 Dialog 的展示与底部 XML |
 | 相关页面现有 ViewModel | 本轮尚未返回的 requestCode；激活页另存本轮是否访问过结果 |
 
 类型和小数据类可放在以上文件中，不需要为每个字段新建一层框架。
@@ -171,13 +171,13 @@ A/B **合计本地自然日最多展示一次**。使用设备当前时区的日
 
 | 键 | 类型 / 初始值 | 含义 |
 |---|---|---|
-| `a_show_count` | Int / 0 | A 已展示次数 |
-| `a_last_shown_at` | Long / 0 | A 上次展示的毫秒时间戳 |
-| `a_stopped` | Boolean / false | 是否点过 A 任意添加按钮 |
-| `b_show_count` | Int / 0 | B 已展示次数 |
-| `b_last_shown_at` | Long / 0 | B 上次展示的毫秒时间戳 |
-| `b_stopped` | Boolean / false | 是否点过 B 任意添加按钮 |
-| `last_any_shown_at` | Long / 0 | A/B 最近一次展示时间，用于共享自然日额度 |
+| `common_tools_widget_show_count` | Int / 0 | 常用工具已展示次数 |
+| `common_tools_widget_last_shown_at_millis` | Long / 0 | 常用工具上次展示毫秒时间 |
+| `common_tools_widget_stopped_after_add_click` | Boolean / false | 是否点过常用工具的添加按钮 |
+| `ai_quick_news_widget_show_count` | Int / 0 | AI 快看已展示次数 |
+| `ai_quick_news_widget_last_shown_at_millis` | Long / 0 | AI 快看上次展示毫秒时间 |
+| `ai_quick_news_widget_stopped_after_add_click` | Boolean / false | 是否点过 AI 快看的添加按钮 |
+| `last_any_widget_guide_shown_at_millis` | Long / 0 | 两类最近一次展示时间，用于共享自然日额度 |
 
 不存页面列表、来源页面 ID、搜索资格、资讯资格、待弹任务或冷却计时器。退出登录、配置变化、设置入口点击不重置记录。清除应用全部数据后，记录消失，按初始状态重新计算。
 
@@ -242,7 +242,7 @@ ARouter 可保留，使用 requestCode 重载接收页面返回结果。`onArriv
 5. 增加荣耀设备设置入口，只调用 deeplink。
 6. 实施测试和真机验收，替换废弃代码；旧测试不作为新规则通过依据。
 
-以上为后续实施计划，本次只重写文档。代码接入见 [INTEGRATION.md](INTEGRATION.md)，单测和风险见 [ACCEPTANCE.md](ACCEPTANCE.md)。
+当前 B 分支已实现上述主要路径。接入细节见 [INTEGRATION.md](INTEGRATION.md)，测试与风险见 [ACCEPTANCE.md](ACCEPTANCE.md)。
 
 ## 13. 官方依据
 
