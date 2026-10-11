@@ -1,506 +1,255 @@
-# 小组件添加引导系统设计
+# B 分支：桌面组件引导系统设计与实现方案
 
-> **V1 历史实现说明。** 本文解释旧代码；最新需求和后续实现以 [IMPLEMENTATION_PLAN_V2.md](IMPLEMENTATION_PLAN_V2.md) 为准。V2 尚未编码；请勿继续采用旧版长期保留行为、到期补弹、AB 总计三次等规则。
+更新日期：2026-10-11。技术栈：Kotlin + XML，现有 ARouter，本地 SP 或 MMKV。
 
-本文对应 Demo4 当前实现，面向接手维护和迁移到正式浏览器项目的开发者。代码使用 Kotlin + XML，默认存储为 SharedPreferences，提供 MMKV 替换边界。这里的 Navigation 指本模块的导航事件协议及 `DemoNavigation` 适配器，不是 Jetpack Navigation 组件。
+**按普通页面栈返回设计：打开页面使用 ARouter；返回使用系统返回键、返回手势或页面的 `finish()`。返回时不重新启动首页。**
 
-## 1. 目标、范围与核心约定
+原先方案废弃。本文是后续编码依据，配套 [接入示例](INTEGRATION.md) 和 [单测、验收与风险](ACCEPTANCE.md)。本次提交只有文档；现存业务源码及旧测试尚未改为 B 方案。
 
-系统根据用户已经完成的行为，在合适的页面展示两种小组件添加引导，并控制打扰次数。
+## 1. 先用一条搜索流程说明
 
-| 名称 | 代码枚举 | 含义 |
-|---|---|---|
-| A | `GuideType.TOOLS` | 工具组件添加引导 |
-| B | `GuideType.AI_NEWS` | AI 资讯组件添加引导 |
+首页打开搜索激活页，搜索激活页打开搜索结果页。搜索结果页真正显示过后，准备一个“访问过搜索结果”的返回字段。之后用户可以继续打开任何页面，这些页面都保持原样。
 
-实现范围包括行为识别、资格持久化、云配控制、位置匹配、频控、弹窗展示、已有添加入口跳转以及可运行的验证宿主。已有桌面/负一屏小组件本体、真实截图、生产云配服务和厂商添加能力不在本仓库内。
+用户逐层返回时，搜索结果页结束，搜索激活页收到该字段；搜索激活页再结束，首页收到该字段。首页只在这次返回时检查弹窗频次，允许就弹 A，不允许就结束。
 
-核心约定：
-
-1. **完成行为与当前允许弹窗是两件事。** 行为一旦完成，持久保留；暂时关闭云配、当天已弹、冷却未到、页面不对都不清除行为。
-2. **未完成路径只存在内存中。** 从首页进入搜索激活页，还不算完成；到结果页前绕经其他业务页，链路失效。进程重启不恢复半条链路。
-3. **展示以内容首帧绘制回调为口径。** 准备展示、排队、调用路由、调用 `showNow` 都不等于计次。
-4. **A/B 共用每日一次、累计三次限制，各自计算冷却。** 首页和我的展示的 A 使用同一份 A 历史。
-5. **不识别是否已经添加。** 点击添加或打开落地页不设置 `everAdded`，也不因此停止自动引导。
-6. **无法确认状态时暂停自动引导。** 不把损坏数据当空数据，也不把预约当作已经展示。
-7. **手动入口始终独立。** 设置页直接进入添加能力，不读取自动资格、不增加自动引导次数。
-
-## 2. 业务规则矩阵
-
-### 2.1 行为和展示位置
-
-| 已完成行为 | 合法路径 | 持久字段 | 可以支持的展示 |
-|---|---|---|---|
-| 首页搜索 | 首页搜索框 → 搜索激活 → 搜索结果 | `HOME_SEARCH` | 首页各频道的 A |
-| 首页直接搜索 | 首页搜索按钮 → 搜索结果 | 同一个 `HOME_SEARCH` | 首页各频道的 A |
-| 我的工具访问 | 我的 → 书签 / 历史 / 下载 | `MINE_TOOL` | 我的页的 A |
-| AI 资讯访问 | 首页 AI 快看 → 资讯详情 | `HOME_AI_DETAIL` | 首页 AI 快看频道的 B |
-
-`HOME_SEARCH` 不支持在我的页弹 A，`MINE_TOOL` 不支持在首页弹 A。两个行为独立，只有 A 的历史共用。
-
-完成首页搜索后，可以继续去其他页面任意多次，再回到首页等待展示。只有**结果页出现前**的绕行才使未完成搜索链路失效。
-
-### 2.2 候选顺序
-
-| 实际可见位置 | 候选顺序 | 说明 |
-|---|---|---|
-| 首页 AI 快看 | B → A | B 的任一条件不满足时继续判断 A |
-| 首页推荐 / 体育 / 地区 | A | 不允许 B |
-| 我的 | A | 使用 `MINE_TOOL` 资格 |
-| 其他业务页 / 无宿主 | 无 | 不产生自动弹窗 |
-
-当前实现将 A 的首页范围定义为全部频道。`GuidePolicy(toolsOnAllHomeChannels = false)` 只从 AI 频道移除 A，**并不把 A 限制到推荐频道**。若产品需要“仅推荐”，必须增加更细的 Surface 或修改映射，不能误用这个开关。
-
-### 2.3 频控公式
-
-设某类型已有的记录为 `own`，最后展示时间为 `last`：
-
-- `own.size == 0`：该类型第一次无冷却。
-- `own.size == 1`：`next = last + firstPopInterval × 86,400,000ms`。
-- `own.size >= 2`：`next = last + secondPopInterval × 86,400,000ms`。
-- A/B 所有记录里只要有一条 `localEpochDay == 今天`，当天拒绝。
-- A/B 全部 `records.size >= 3`，永久停止自动引导，直到用户清除应用数据等明确重置。
-
-默认间隔为 1 / 3，即同类型第一次之后至少 24h，第二次之后至少 72h。间隔允许零，但不能绕过每日一次。
-
-例如上海时间 10 日 23:00 展示 A，11 日 01:00 虽已跨自然日，但 A 的 24h 未满；从未展示过的 B 如果满足行为且处在 AI 频道，可以在此时展示。B 展示后又会占用 11 日的全局日额度。
-
-## 3. 模块划分和依赖方向
-
-```mermaid
-flowchart TD
-    App["app：页面与 ARouter 适配"] --> Runtime["runtime：串行事件控制器"]
-    App --> UI["ui：内容与 Fragment 宿主"]
-    Runtime --> Core["core：模型、行为、策略"]
-    Runtime --> Storage["storage：状态仓库"]
-    UI --> Core
-    UI --> Contract["runtime：GuideHost 契约"]
-    Storage --> Core
-    Storage --> SP["SP 单值 JSON / MMKV 适配"]
-```
-
-| 层 | 主要文件 | 职责 | 不负责 |
-|---|---|---|---|
-| core | `GuideModels` | 状态、配置、时间、决策数据模型 | Android 生命周期 |
-| core | `GuideBehaviorTracker` | 验证来源、入口和路径，返回完成行为 | 写盘、是否能展示 |
-| core | `GuidePolicy` | 候选优先级和纯频控判断 | 启动协程、创建窗口 |
-| storage | `PersistentGuideRepository` | 单实例 Mutex + IO 读改写 | 业务页面判断 |
-| storage | `GuideStateCodec` | 版本化 JSON 和严格解码 | 自动修复/清空损坏状态 |
-| runtime | `WidgetGuideController` | 串行事件、预约、复核、计次、到期刷新 | ARouter 和具体 XML |
-| runtime | `GuideConfigSource/Parser` | 配置流契约、JSON 校验 | 网络请求和云缓存策略 |
-| ui | `FragmentGuideHost` | 生命周期/管理器检查、同步接纳、精确取消 | 业务资格判定 |
-| ui | `WidgetGuideDialogFragment` | XML 渲染、首帧/关闭通知、防连点 | 直接修改频控 |
-| app | `GuideApplication` | 进程级依赖组装 | 正式服务接入 |
-| app | `MainActivity/DetailActivity` | 可见位置和导航事实接入 | 重复实现频控规则 |
-| app | `DebugActivity` | 验证配置、时钟、显式重置 | 正式产品功能 |
-
-核心模块不依赖 ARouter。迁移时先替换接入层，尽量保持行为、策略和存储协议不变。
-
-## 4. Navigation 字段逐项说明
-
-### 4.1 `PageRef`：一个逻辑页面实例
-
-```kotlin
-data class PageRef(val id: String, val kind: PageKind)
-```
-
-| 字段 | 表示什么 | 例子 | 约束 |
-|---|---|---|---|
-| `id` | 具体页面实例的身份 | `root-1:home:0`、`search-active-17` | 同一页恢复保持不变；不同实例不能复用 |
-| `kind` | 业务页面类型 | `HOME_OTHER`、`SEARCH_ACTIVE` | 相同类型允许有多个不同实例 |
-
-`PageRef` 是 data class，比较时 **id 和 kind 都要相同**。用类名 `SearchActivity` 当 ID 无法区分两个激活页，会导致借用错误来源。
-
-主页面只有一个 Activity，但首页推荐、首页 AI、我的仍是不同逻辑页。验证宿主用 `rootId + :home:频道下标` 或 `rootId + :mine` 生成身份。配置重建恢复 `rootId`、底部位置和频道；业务跟踪器不依赖 Activity 类名判断位置。
-
-### 4.2 `NavigationEvent`：一次成功进入事件
-
-```kotlin
-data class NavigationEvent(
-    val id: String,
-    val from: PageRef,
-    val to: PageRef,
-    val entry: EntryPoint
-)
-```
-
-| 字段 | 含义 | 谁提供 | 作用 |
-|---|---|---|---|
-| `id` | 本次导航动作的唯一 ID | 发起路由时生成，随路由参数传递 | 同一事件重复上报去重 |
-| `from` | 跳转前真实可见的页面实例 | 来源页面适配层 | 必须匹配跟踪器当前页，排除伪造/过期来源 |
-| `to` | 本次已经进入的目标实例 | 发起方生成身份，目标页接收 | 成为新的当前页；后续导航将它作为来源 |
-| `entry` | 用户通过哪个入口跳转 | 可信内部点击/路由适配层 | 区分首页搜索、我的工具、AI 资讯和普通跳转 |
-
-**事件 ID 与页面 ID 不同。** 例如 `navigationId=n1` 把 `home-1` 带到 `active-1`；下一次 `navigationId=n2` 把 `active-1` 带到 `result-1`。第二次的 `from.id` 复用上一页 `to.id`，但事件 ID 必须更新。
-
-同一次事件重传保留原 `id`。返回已有页面调用 `visible`，不要创建新的 `NavigationEvent`。同一 Intent 因旋转重建也不应被当作新导航。
-
-### 4.3 `PageKind` 全部值
-
-| 枚举 | 业务含义 |
-|---|---|
-| `HOME_OTHER` | 首页非 AI 频道，包括推荐、体育、地区 |
-| `HOME_AI` | 首页 AI 快看频道 |
-| `MINE` | 我的页 |
-| `SEARCH_ACTIVE` | 搜索激活页，尚未到结果 |
-| `SEARCH_RESULTS` | 搜索结果页 |
-| `BOOKMARKS` / `HISTORY` / `DOWNLOADS` | 书签 / 历史 / 下载页 |
-| `NEWS_DETAIL` | 资讯详情，需结合来源才能区分是否 AI 行为 |
-| `OTHER` | 其他所有业务页，包括设置、添加页、调试页 |
-
-### 4.4 `EntryPoint` 全部值
-
-| 枚举 | 有效来源和目标 | 行为结果 |
-|---|---|---|
-| `HOME_SEARCH_BOX` | 首页 → 搜索激活 | 暂存该激活页实例，还不完成行为 |
-| `HOME_SEARCH_BUTTON` | 首页 → 搜索结果 | 完成 `HOME_SEARCH` |
-| `SEARCH_SUBMIT` | 被暂存的同一激活实例 → 搜索结果 | 完成 `HOME_SEARCH` |
-| `MINE_TOOL` | 我的 → 书签/历史/下载 | 完成 `MINE_TOOL` |
-| `AI_ARTICLE` | 首页 AI 频道 → 资讯详情 | 完成 `HOME_AI_DETAIL` |
-| `OTHER` | 普通导航 | 不产生特殊资格，正常更新当前页并中断旧的未完成链路 |
-
-不能仅凭 `to.kind == SEARCH_RESULTS` 就授予搜索资格，也不能在任何搜索页随意填 `HOME_SEARCH_BUTTON`。这些字段是内部事件协议，不是可信的外部 deeplink 参数。
-
-### 4.5 `DemoNavigation.page()` 与 Intent 参数
-
-方法入参 `context` 为路由上下文，`from` 为当前真实页，`to` 为目标类型，`entry` 默认为 `OTHER`。它向 `/browser/page` 传递：
-
-| Intent key | 来源 | 消费位置 |
-|---|---|---|
-| `pageId` | 新 UUID | 目标 `PageRef.id` |
-| `pageKind` | `to.name` | 目标 `PageRef.kind` |
-| `fromId` | `from.id` | 来源 `PageRef.id` |
-| `fromKind` | `from.kind.name` | 来源 `PageRef.kind` |
-| `entry` | `entry.name` | `NavigationEvent.entry` |
-| `navigationId` | 另一个新 UUID | `NavigationEvent.id` |
-
-`DetailActivity` 在首次 `onCreate` 解析合法内部参数并上报 `entered`，在 `onResume` 上报 `visible`。这是验证工程对“目标已进入”的接入点：意味着目标业务 Activity 已创建，不代表目标页首帧已显示。正式项目如果有登录拦截、重定向、路由中转或内容校验，须在真正到达业务目标后上报，不能照搬中转页的 `onCreate`。
-
-当前目标 Activity 是 standard。正式页面复用 singleTop/singleTask 时，在 `onNewIntent` 中识别新的导航事件并更新 page 身份；普通恢复只上报 `visible`，不要每次 `onResume` 重新生成事件 ID。
-
-### 4.6 完整路径示例
-
-```kotlin
-val home = PageRef("root-1:home:0", PageKind.HOME_OTHER)
-val active = PageRef("active-1", PageKind.SEARCH_ACTIVE)
-val results = PageRef("results-1", PageKind.SEARCH_RESULTS)
-
-// 真实首页已可见。
-controller.visible(home)
-
-// 目标激活页已进入。先 entered，再 visible。
-controller.entered(NavigationEvent("nav-1", home, active, EntryPoint.HOME_SEARCH_BOX))
-controller.visible(active)
-
-// 从同一个激活页直接提交并进入结果页，才完成首页搜索行为。
-controller.entered(NavigationEvent("nav-2", active, results, EntryPoint.SEARCH_SUBMIT))
-controller.visible(results)
-
-// 行为已经持久完成，后续多次导航不撤销资格。
-controller.visible(PageRef("other-1", PageKind.OTHER))
-controller.visible(home)
-// 返回时还要让宿主快照真正可展示，并 refresh；visible 本身不是展示许可。
-```
-
-`visible` 与 `HostSnapshot` 不能相互替代：前者服务于路径识别，后者服务于弹窗位置与可展示性判断。两者要来自同一真实页面状态。
-
-## 5. 行为跟踪器状态机
-
-跟踪器保存 `current`（当前页）、`searchActivation`（被首页授权的激活实例）和最近 32 个事件 ID。已完成资格不保存在这里。
-
-```mermaid
-stateDiagram-v2
-    [*] --> NoPath
-    NoPath --> AwaitResults: 首页搜索框进入激活实例 X
-    AwaitResults --> AwaitResults: 同一实例 X 恢复可见
-    AwaitResults --> Qualified: X 直接提交进入结果
-    AwaitResults --> NoPath: 其他业务页或不同实例可见
-    NoPath --> Qualified: 首页直接搜索或合法工具/AI入口
-    Qualified --> NoPath: 返回行为给 Controller 持久保存
-```
-
-处理 `entered` 的顺序：
-
-1. 若事件 ID 在最近 32 个中，直接忽略。
-2. 保存 `current == from` 的校验结果，暂存旧 `searchActivation`。
-3. 清除旧链路，更新 `current = to`。即使来源不匹配，也不继续保留过期链路。
-4. 来源不匹配则不授予行为。
-5. 来源匹配时，按来源类型、入口、目标类型识别。
-6. Controller 将返回行为加到 `GuideState.behaviors`；如果已经存在，不重复写盘。
-
-最近 32 个 ID 只是短期内存去重，不是任意历史事件重放保护；正式接入层仍须保证事件 ID 与生命周期上报正确。达到三次上限时 `tracker.clear()`，Controller 不再调用行为识别。云配关闭不属于停止行为采集条件；异常暂停 `fault` 则会暂停采集。
-
-## 6. 领域状态和持久协议
-
-### 6.1 持久字段
-
-| 模型/字段 | 含义 | 写入时机 |
-|---|---|---|
-| `GuideState.behaviors` | 已完成的行为集合 | 新行为第一次满足 |
-| `GuideState.records` | A/B 已展示历史 | 首帧回调后的写盘 |
-| `GuideState.pending` | 尚未完成记账的展示预约 | 请求宿主之前 |
-| `PendingShow.id/type` | 本次展示尝试 ID 与类型 | 资格允许后生成 |
-| `ShowRecord.id/type` | 同一展示尝试的 ID 与类型 | 由 pending 转成记录 |
-| `shownAtMillis` | 首帧回调时刻 | 在回调处捕获，避免事件队列延迟改变时间 |
-| `localEpochDay` | 首帧时本地日期的整数表示 | 与毫秒时间使用同一 GuideTime |
-
-SP 文件为 `browser_widget_guide.xml`，key 为 `state_v1`。以下是协议结构示意；示例时间是 epoch 起点，不代表真实业务时间：
-
-```json
-{
-  "version": 1,
-  "behaviors": ["HOME_SEARCH"],
-  "records": [
-    {"id": "presentation-1", "type": "TOOLS", "shownAt": 0, "day": 0}
-  ],
-  "pending": null
-}
-```
-
-`shownAt` 对应 `shownAtMillis`，`day` 对应 `localEpochDay`。没有独立的 count 字段，次数从 `records.size` 派生，避免次数与记录分开写产生不一致。
-
-### 6.2 仓库读改写
-
-`PersistentGuideRepository` 在一个 Mutex 内执行“读取最新 JSON → 严格解码 → transform → 编码 → 写入”。磁盘与编解码在 IO dispatcher 执行。`transform` 必须是纯转换，不可操作 UI 或递归调用仓库。
-
-SharedPreferences 使用同步 `commit()` 并检查 Boolean，不能改成 `apply()` 后无条件认为成功。即使重试的新值与读回值相同，也再次写盘，因为失败的 commit 可能已经改变 SP 的内存视图。
-
-Mutex 只覆盖**这个实例**。同文件不可由多个 Repository 实例或多个进程分别读改写。其他进程事件必须转发到主进程唯一 Controller。
-
-### 6.3 严格解码与版本升级
-
-解码要求版本等于 1、存在 pending 字段、枚举合法、记录 ID 非空且唯一、时间非负、日期在接受范围内，且 pending ID 不与已展示记录重复。额外未知字段没有显式拒绝，但未知 schema 版本会失败。
-
-损坏 JSON 或未知版本抛异常，Controller 暂停；不会自动变成 `GuideState()`。未来升级协议，应增加显式迁移分支及迁移测试，保留行为和历史，不得仅修改版本号后把旧值当空数据。
-
-### 6.4 MMKV 替换方式
-
-保留 `GuideStateCodec` 与 `PersistentGuideRepository`，只替换 `StringStateStore.read/write`。读写仍是一个 JSON key，按项目已经使用的 MMKV 版本实现写入/同步契约；返回失败或传播异常，不能无条件返回 true。本仓库未引入 MMKV 依赖，也未验证某个 MMKV 版本的落盘保证。
-
-频控文件须排除云备份和设备迁移。本验证 app 还关闭整体备份；正式项目可保留自身备份策略，只排除此文件。应用升级通常保留状态；清除数据/卸载重装按需求重新开始。
-
-## 7. 展示协调、线程和并发
-
-### 7.1 主线程边界
-
-Application 创建进程唯一 Controller。`attach/detach/visible/entered/refresh/close` 以及 Host 回调均要求从主线程调用。代码没有强制的线程断言，接入方必须遵守。
-
-Controller 用 `Channel.UNLIMITED` 接收事件，一个消费者顺序处理。无界队列避免丢失首帧等关键事实，但要求入口只上报业务变化，禁止在每次 RecyclerView bind、布局或动画帧调用 refresh。生产若需要去抖，只能合并可替代的刷新，不能丢弃 entered/shown/closed。
-
-Repository 挂起不阻塞主线程。期间宿主位置、引用、配置都可能变化，因此“一个事件消费者”并不等于可以省略展示前二次校验。
-
-### 7.2 HostSnapshot
-
-| 字段 | 说明 |
-|---|---|
-| `hostId` | 逻辑宿主 ID，用于区分逻辑宿主身份 |
-| `version` | 位置/有效性变化递增，发现离开后又回到原位置的情况 |
-| `surface` | 实际可见的底部 Tab 与首页频道组合 |
-| `canPresent` | 当前恢复前台、Fragment 状态未保存等可展示条件 |
-
-Controller 同时比较宿主对象引用和整个快照。`version` 不能在 getter 内递增；本引导自身出现也不能让 `canPresent=false`，否则自己会触发自己取消。
-
-### 7.3 一次展示的完整时序
+首页只打开搜索激活页又返回，或者只去过游戏 / 视频页，没有“访问过搜索结果”的返回字段，因此不弹。需要改的是入口、激活页和结果页，不是所有经过的页面。
 
 ```mermaid
 sequenceDiagram
-    participant Page as 页面/云配
-    participant C as Controller
-    participant R as Repository
-    participant H as GuideHost
-    participant D as DialogFragment
-    Page->>C: entered / visible / refresh
-    C->>R: 持久保存新行为（如有）
-    R-->>C: 最新状态
-    C->>C: 候选和频控判断
-    C->>R: 写 pending(id,type)
-    R-->>C: 预约成功
-    C->>C: 重读宿主/配置/时间并复核
-    C->>H: tryShow(request, callbacks)
-    H->>D: showNow（同步接纳）
-    H-->>C: true
-    D->>C: onShown（首帧）
-    C->>R: 同 ID 追加 record 并清 pending
-    R-->>C: 记录成功
-    D->>C: onClosed
-    C->>C: 释放 active，重新评估
+    participant H as 首页
+    participant A as 搜索激活页
+    participant R as 搜索结果页
+    participant X as 其他页面
+    H->>A: ARouter 打开并接收结果
+    A->>R: ARouter 打开并接收结果
+    Note over R: 页面显示后准备访问标记
+    R->>X: 原有跳转
+    X-->>R: 原栈返回
+    R-->>A: finish 后交付访问标记
+    A-->>H: finish 后转交访问标记
+    Note over H: 本轮只检查一次频次
 ```
 
-- 复核失败：清除预约，再排队刷新，不请求窗口。
-- `tryShow=false`：必须确认没创建窗口、没排队；可清预约，等待管理器可用通知。
-- `tryShow` 抛异常：无法证明窗口没出现，保留预约并暂停。
-- 已接纳但首帧前条件失效：请求原宿主 cancel，最终由 onClosed 释放未显示预约。
-- 已经首帧显示：次数事实保留。离开页面/关闭配置可取消窗口，但不会减次数。
+`setResult()` 只是准备返回数据，不关闭当前页；`finish()` 或系统返回结束当前页时，数据才交给启动它的页面。由 Android 负责调用关系，我们不另建页面栈。
 
-“预绘制通知”是可观测的本地计数点，不能证明用户真的看见、阅读了内容，也不能和存储组成硬件层面的原子事务。
+## 2. 页面与入口要求
 
-### 7.4 运行中字段
-
-| 字段 | 用途 |
+| 页面 | UI 与点击行为 |
 |---|---|
-| `host` | 最新连接宿主，attach/detach 立即更新 |
-| `state` | 最近一次成功仓库读写返回的状态 |
-| `active` | 当前正在接纳/展示的请求，同一时刻最多一个 |
-| `activeHost/activeSnapshot` | 该请求属于哪个宿主、基于哪份位置快照 |
-| `shown` | 当前请求是否已收到首帧，防止写盘失败后错误释放预约 |
-| `retryRecord` | 首帧已发生、待成功提交的原始记录 |
-| `fault` | 异常暂停标志，阻止新自动展示及行为采集 |
-| `timer` | 唯一下一次到期刷新任务 |
-| `status` | 开发诊断流，不是额外的业务决策状态源 |
+| 首页推荐 tab | 顶部搜索框、搜索按钮、扫一扫。普通点击搜索框进入激活页；搜索按钮进入结果页；高亮暗词由 deeplink 决定实际落点 |
+| 搜索激活页 | 顶部搜索框与按钮；下面依次是搜索历史、猜你想搜、热搜榜。横向 ViewPager 包含游戏、电影电视、综艺、视频榜 |
+| 榜单条目 | 电影电视与综艺条目进入结果页；游戏、视频条目的普通落点不是结果页 |
+| 搜索结果页 | 展示搜索结果；进入此页面是搜索路径的关键条件，不要求再点击某条结果 |
+| 首页 AI 快看 tab | AI 资讯列表，点击资讯进入详情 |
+| 我的页 | 书签、历史、下载、设置入口；书签和历史在同一 Activity 的左右两个 tab |
+| AI 搜页面 | AI 快看入口打开二级列表，二级列表打开资讯详情 |
+| 设置页 | 新增“添加桌面组件”；仅荣耀设备显示，点击 deeplink 到快服务添加界面 |
 
-### 7.5 计次幂等
+本文的 Activity 名和路由地址是接入示意，不要求正式项目按这些名字新建页面。已有 Fragment tab 继续复用，结果由承载它的 Activity 接收并分发。
 
-Controller 先核对回调 ID 是否属于 active，再用 shown 去重。仓库提交时再次核对 record ID；同 ID 已存在则不重复追加。重复首帧回调、重复 refresh 和失败后的同 ID 重试都不能增加第二条记录。
+## 3. 触发与展示位置
 
-计数后关闭不会清除行为。点击添加只进行路由；不另加次数、不取消已有次数。
+| 原入口 | 必须访问的关键页 | 返回到哪里才检查 | 弹窗与位置 |
+|---|---|---|---|
+| 首页搜索按钮 / 高亮暗词实际进入结果页 | 搜索结果页 | 原首页 | A，首页非 AI 快看 tab 底部 |
+| 首页搜索框 → 搜索激活页 | 激活页打开的搜索结果页 | 原首页；激活页负责转交结果 | A，首页非 AI 快看 tab 底部 |
+| 我的 → 书签 / 历史 | 书签历史容器 Activity | 原我的页 | A，我的页底部 |
+| 我的 → 下载 | 下载页 | 原我的页 | A，我的页底部 |
+| 首页扫一扫 | 扫一扫页 | 原首页 | A，首页非 AI 快看 tab 底部 |
+| 首页 AI 快看列表 | 资讯详情页 | 原首页 AI 快看 tab | B，该 tab 底部 |
+| AI 搜 → AI 快看二级列表 | 二级列表打开的资讯详情页 | 原 AI 快看二级列表 | B，二级列表底部 |
 
-## 8. 崩溃恢复和异常矩阵
+每一行允许关键页继续打开其他任意页面，再按原页面栈返回。其他页面不接入引导逻辑。工具、资讯、扫描访问以关键页面实际显示为准；扫描不要求识别成功。
 
-窗口展示和磁盘写入不能形成一个事务。系统选择宁可少弹，也不在无法确认时重复打扰。
+搜索激活页可多次搜索。同一次从首页出去、最后返回首页的过程，最多产生一次检查。书签和历史 tab 切换也只属于同一次工具访问。
 
-| 场景 | 磁盘/内存结果 | 后续处理 |
+下列情况不产生弹窗：
+
+- 冷启动进入首页。
+- 首页 → 搜索激活页 → 返回首页，没有到过结果页。
+- 首页 → 激活页 → 游戏 / 视频 → 按栈返回，没有到过结果页。
+- 首页推荐 tab 的高亮暗词实际打开普通资讯详情。它不算搜索结果，也不属于 AI 快看入口。
+- AI 搜 → AI 快看二级页 → 直接返回 AI 搜，没有访问资讯。
+- 普通切 tab、锁屏解锁、后台回前台，没有收到本轮有效返回结果。
+
+B 的二级页路径在返回二级列表时检查，不能继续传给 AI 搜后再弹。A/B 不互相兜底：A 的返回不在 AI tab 上改弹 B，B 被限频也不会改弹 A。
+
+## 4. 系统只分三个职责
+
+| 职责 | 放在哪里 | 做什么 |
 |---|---|---|
-| 保存行为失败 | 不确认新行为成功 | fault，暂停自动流程；不自动清空历史 |
-| 写预约失败 | 不能确认持久化结果 | fault；不继续请求新窗口 |
-| 预约写成功，复核不通过 | 清除预约 | 等待新的有效位置/配置 |
-| 管理器明确拒绝 | 清除预约，不新增记录 | 名额恢复调用 refresh |
-| 接纳后未首帧就关闭 | 清除预约，不新增记录 | 资格仍保留，后续可再评估 |
-| 首帧成功且记录写成功 | records +1，pending=null | 继续遵守每日和累计限制 |
-| 首帧成功但记录写失败 | retryRecord 保留原 ID/时间；fault | 后续 refresh 重试同一记录，成功后解除 fault |
-| 写预约后到完成记账前进程死亡 | 磁盘可能只剩 pending | 重启暂停，不把 pending 算次数，也不直接再弹 |
-| JSON 损坏/未知版本 | 读取失败 | 暂停，报告错误，禁止静默重置 |
-| 宿主 tryShow 抛异常 | 可能已经出现窗口 | 保留预约，暂停，不按 false 处理 |
-| Fragment 被系统恢复但无 callbacks | 没有活跃展示所有者 | 在窗口创建前禁用并移除旧 Fragment |
+| 页面结果回传 | 相关入口及关键业务页 | 打开时使用 requestCode；关键页准备访问标记；返回入口后发起一次检查 |
+| 引导管理器 `WidgetGuideManager` | 单进程共享一个实例 | 读取配置与本地记录，判断频次，记录展示和点击停止；内部用简单存储类读写 SP/MMKV |
+| 底部弹窗 `WidgetGuideDialog` | 当前展示页面持有 | Kotlin + XML，绑定标题、截图、两个按钮，处理取消与添加 |
 
-通用 `fault` 没有自动重试所有错误。只有已有 `retryRecord` 的首帧记账失败，在 Refresh 时有明确重试路径。启动残留 pending、损坏数据、预约写失败等，不会因为普通 refresh 自动清零恢复。正式版本没有“自动清空并重新计数”的入口，运营若要引入恢复策略需单独设计和验收。
+管理器不认识搜索激活页、下载页或其他页面，也不维护路由记录。业务页面已确定本次是 A 还是 B，管理器只接收类型和当前展示宿主。
 
-`fail()` 当前主要暂停新展示和计时器，不是一个保证关闭所有可能窗口的通用清理事务；宿主必须遵守接受/拒绝/取消契约，异常应尽量在尚未创建窗口前检查。`close()` 会请求取消 active，但不承诺进程结束时完成异步持久记账；残留情况仍由 pending 策略兜底。
+建议的文件职责：
 
-## 9. 时间、配置和重新评估
+| 文件 | 内容 |
+|---|---|
+| `GuideResultContract.kt` | requestCode、访问标记，以及二者与弹窗类型的对应关系 |
+| `WidgetGuideManager.kt` | 频次判断、展示入口、展示计数、添加点击停止 |
+| `GuideStore.kt` | 小型 SP 实现；项目已有 MMKV 时替换读写即可 |
+| `WidgetGuideDialog.kt`、`dialog_widget_guide.xml` | 底部弹窗 |
+| 相关页面现有 ViewModel | 本轮尚未返回的 requestCode；激活页另存本轮是否访问过结果 |
 
-### 9.1 时间策略
+类型和小数据类可放在以上文件中，不需要为每个字段新建一层框架。
 
-冷却使用系统毫秒时间，日额度使用展示时本地日期。`nextMidnightMillis` 按时区计算下一日期起点，不能简单加 24h；夏令时切换日可能是 23h 或 25h。
+## 5. 返回协议为什么足够
 
-若历史记录的毫秒或日期晚于当前快照，返回 `CLOCK_ROLLBACK`，不删除记录。时区大幅变化也可能触发保守阻断。此实现没有可信服务端时间，不提供本地时间篡改防护。
+### 5.1 打开与返回各自负责什么
 
-每次 evaluate 取消旧 timer。若没有可展示候选，从 DAILY/COOLDOWN 的重试时间中选择最早值启动协程 delay。调度只是“到时再判断”，不是到点必弹；仍需有效宿主和配置。没有 Alarm/WorkManager，不在进程死后拉起 App 展示。
+相关入口使用 ARouter 的 `navigation(activity, requestCode)`。仍然走现有路由，额外让 Android 在目标页结束后交付结果。
 
-时间/时区变化时，正式宿主应 refresh；回前台也 refresh。本验证宿主在恢复页面和推进调试时间时刷新，没有另外注册系统时间变化广播。
+关键页显示后，把 `guide_visit` 加入该页自己的返回 Intent。四种值代表搜索结果、工具、扫一扫、AI 资讯详情。它说明实际到过哪一种关键页，不说明添加成功。
 
-### 9.2 云配格式
+原入口同时匹配“自己正在等待的 requestCode”和“期望的 guide_visit”。不同访问标记避免高亮暗词实际跳资讯却被误认作搜索。
+
+仅搜索激活页需要中转：收到搜索结果标记后，将同样含义写入自己的返回数据；等激活页正常返回首页再交付。任意后续页面不复制此字段。
+
+### 5.2 最少的内存状态
+
+| 状态 | 生命周期 | 用途 |
+|---|---|---|
+| `waitingRequestCode` | 入口的普通 ViewModel | 等待当前业务返回；收到对应回调先清空，防止重复消费 |
+| `hasVisitedSearchResults` | 激活页的普通 ViewModel | 本次激活页停留期间，已经收到过搜索结果访问标记 |
+| `pendingReturn` | 入口 Activity 临时字段 | 回调早于页面恢复时，交给紧接着的恢复回调消费一次 |
+
+不写 SP/MMKV，不写 SavedStateHandle，不保存为可跨进程恢复的资格。普通 ViewModel 保留旋转时的在途关系；进程结束后新实例没有等待关系，恢复出的历史结果不触发引导。
+
+`pendingReturn` 只是这次返回结果与页面恢复之间的 UI 交接。入口恢复时先取出并清空，再检查当前 tab 和频次；所有拒绝直接结束。若交接期间再次离开页面或切换展示位置，也清空。冷却到期、跨天、云配刷新都不会重新唤起它。
+
+### 5.3 保留原有业务返回
+
+引导只追加字段，不能用新 Intent 覆盖原有扫码结果、选中条目等字段，也不能强行修改原业务 `resultCode`。
+
+“扫描取消”和“扫描页面已访问”是不同事实。即使扫描业务返回 `RESULT_CANCELED`，只要带有效扫描访问标记且属于当前等待关系，仍可检查 A；没有标记的失败 / 取消不触发。
+
+### 5.4 当前方案边界
+
+普通页面栈返回按以上协议即可。不为全局清栈、重建任务栈、跨进程页面链建立追踪器。以后相关入口改变导航方式时，在该入口复核回传关系；不能把一次任意 Activity 回调当成完整栈路径证明。
+
+## 6. 频次规则：A、B 各自最多三次
 
 ```json
 {
   "browserWidgetGuideRules": {
-    "enablePop": true,
+    "enable": true,
     "firstPopInterval": 1,
-    "secondPopInterval": 3
+    "secondPopInterval": 10,
+    "thirdPopInterval": 30
   }
 }
 ```
 
-`enablePop` 必须是真 Boolean；开启时两个间隔须为非负 Int。缺失、错误类型、负数、溢出或非法 JSON 返回默认关闭。关闭时允许省略间隔字段。A/B 共用配置值，但各自根据记录计算到期时间。
-
-正式适配器发布 `StateFlow<GuideConfig>`；拉取、缓存、过期、失败时是否沿用最后有效配置由项目现有云配体系决定。配置更新不得重置 GuideState。
-
-验证 `DemoConfigSource` 仅存内存，冷启动默认关闭；Release 没有生产云配接入，因此默认不会自动弹。
-
-## 10. UI 和已有添加能力
-
-`GuideContent` 的 title/description 是文案，previewRes/previewDescription 是图片及无障碍说明，desktopDeeplink/assistantDeeplink 是两个添加入口。两类引导共用 XML 布局，控制器无需知道资源和路由地址。
-
-`FragmentGuideHost.tryShow` 除快照外还检查：Activity RESUMED、未 finishing/destroyed、FragmentManager 未保存状态、统一管理器有名额、固定 tag 未被占用。通过后 showNow，同步返回接受结果；计数在 Dialog 的 OnDraw 回调中完成。
-
-`WidgetGuideDialogFragment` 的 reported、closed 分别限制首帧和关闭回调一次；navigating 防止连点。路由成功发起后关闭，失败或抛异常则提示且允许重试。已首帧发生就不撤销次数。
-
-验证链接：
-
-| 地址/参数 | 用途 |
+| 字段 | 用途 |
 |---|---|
-| `demo4://guide/widget/add?type=tools&target=desktop` | A 的桌面添加验证 |
-| `demo4://guide/widget/add?type=tools&target=assistant` | A 的负一屏添加验证 |
-| `type=ai` | B 的同类入口 |
-| `demo4://guide/widget/add` | 设置页手动选择入口，缺省 choose |
+| `enable` | 自动弹窗总开关；关闭时本次返回直接结束 |
+| `firstPopInterval` | 该类型第 1 次到第 2 次展示的最短间隔，天数乘固定 24 小时 |
+| `secondPopInterval` | 该类型第 2 次到第 3 次展示的最短间隔，天数乘固定 24 小时 |
+| `thirdPopInterval` | 不参与判断。是否存在、值是多少都不会产生第 4 次展示 |
 
-适配器仅接受 scheme=demo4、host=guide、path=/widget/add。当前返回 true 表示 ARouter 调用已发起，没有等待目标页显示或真实添加完成；正式路由需要结合自身错误/异步回调定义返回语义。`WidgetAddActivity` 只是参数回显页。
-
-## 11. 正式项目接入步骤
-
-1. 引入 `widget-guide`，在主进程依赖容器创建唯一 Store、Repository、ConfigSource、Controller。
-2. 将正式云配转为已校验的 StateFlow，默认关闭；注入系统时钟，不迁移调试时钟。
-3. 适配页面事件。首页、我的、首页频道、搜索、工具、资讯以及中间页面都要报告真实身份。失败转场不上报 entered；返回只报 visible。
-4. 适配主页面快照。底部 Tab、顶部频道、前后台、页面遮挡和 Fragment 可提交状态变化时更新 version 并 refresh。
-5. 将统一弹窗管理器接到 GuideHost。忙时同步拒绝，空闲时 refresh；不能在 tryShow 中另排一个保留过期资格的队列。
-6. 注入真实截图/文案/桌面及负一屏链接；设置页直接走相同 navigator，不经过自动引导。
-7. 给 SP 文件增加备份排除。已有 MMKV 项目仅替换 StringStateStore，维持单进程单实例。
-8. 将 reportError 接到监控；按验收清单联调路由复用、弹窗竞争、旋转、杀进程和时间变化。
-
-如果现有管理器必须排队，应先排“展示权申请”，取得名额后 refresh，再由 Controller 重新判断。不要提前捕获 Allow 并保存一个稍后执行的 show 闭包。
-
-对于 Activity 单例引用，MainActivity 在 onDestroy 调用 detach；已接纳窗口结束后 Controller 也清理 activeHost。自定义 Host 必须完成 onClosed，否则 active 可能一直阻塞新请求并保留旧宿主。
-
-## 12. 诊断、测试与维护
-
-### 12.1 拒绝原因
-
-| 原因 | 首先检查 |
+| 某类型已展示次数 | 本轮频次条件 |
 |---|---|
-| `DISABLED` | 当前配置源是否真的开启；验证配置重启会丢失 |
-| `LIMIT` | A/B 总记录是否达到三条 |
-| `RECOVERY_REQUIRED` | 是否存在无法确认的 pending |
-| `HOST` | surface、canPresent、宿主引用、Fragment 生命周期 |
-| `BEHAVIOR` | 当前位置要求的行为是否满足；from/entry 是否正确 |
-| `DAILY` | 今天 A/B 是否已展示任一类型 |
-| `COOLDOWN` | 当前类型自己的最后时间及间隔配置 |
-| `CLOCK_ROLLBACK` | 虚拟时间/系统时间/时区是否早于持久记录 |
+| 0 | 无首次冷却；本轮返回及其他限制通过即可弹 |
+| 1 | 距该类型上次展示至少 `firstPopInterval × 24h` |
+| 2 | 距该类型上次展示至少 `secondPopInterval × 24h` |
+| ≥ 3 | 永不再弹该类型 |
 
-策略按固定顺序返回第一个原因，所以 `DISABLED` 可能遮盖同时存在的其他阻断。Controller 启动残留 pending 会直接进入 fault，状态文字可能显示 Recovery required，而不再经过策略返回原因。管理器拒绝则显示 Waiting for dialog manager。
+A/B **合计本地自然日最多展示一次**。使用设备当前时区的日历日期；单类型冷却仍用固定 24 小时时长，两项分别判断。
 
-status.message 供调试阅读，不建议生产逻辑解析英文字符串。监控可在接入层记录拒绝枚举、presentationId、宿主版本、首帧提交失败和残留预约，不记录搜索词、书签内容或资讯正文。本仓库只有 status 与错误日志，未实现服务端埋点。
+展示时刻是冷却起点，不是取消、添加点击、发起搜索或访问详情的时刻。取消仍占用一次展示和当天共享额度。
 
-### 12.2 自动化测试布局
+例如 A 第一次在 10 月 11 日 10:00 展示，首次间隔 1 天。10 月 12 日 09:59 返回仍不弹；到 10:00 静留首页也不弹。之后重新完成搜索并返回才有新机会。若 B 当天已展示，A 即使冷却到期也不能展示。
 
-| 文件 | 用例数 | 覆盖重点 |
-|---|---:|---|
-| `GuideBehaviorTrackerTest` | 11 | 合法路径、绕行、实例匹配、恢复、去重 |
-| `GuidePolicyTest` | 18 | 行为隔离、位置、A/B 优先级、日额度、冷却、回拨、夏令时 |
-| `WidgetGuideControllerTest` | 11 | IO 竞态、首帧去重、拒绝、配置更新、残留预约、同 ID 重试 |
-| `PersistenceTest` | 6 | 真实 SP 重建、协议、损坏状态、失败写入、云配解析 |
-| `FragmentGuideHostTest` | 3 | 管理器拒绝、首帧时机、重复 tag、无所有者恢复 |
+工程异常处理：`enable` 缺失或结构解析失败时关闭自动引导。间隔可为 0，负数或无法安全换算的值无效；到需要该间隔的阶段才检查，缺失 / 无效则拒绝该次展示。配置更新自身不触发检查。
 
-总计 49 个测试。每个用例现在都有中文业务说明，英文函数名保持不变。测试替换时钟和调度器，IO 竞态用 CompletableDeferred 人为停在预约写入处，验证挂起期间切页面/关配置不会产生旧窗口。
+## 7. 本地只保存频次和停止状态
 
-```bash
-./gradlew :widget-guide:testDebugUnitTest :app:assembleDebug :app:assembleRelease :app:lintDebug :widget-guide:lintDebug
-```
+使用独立 SP 文件，例如 `browser_widget_guide_b`；MMKV 使用等价独立 ID。B 原型不读取废弃方案的行为字段。此仓库是方案 Demo；未来接入已上线应用，历史次数迁移须按线上记录决定，不能借换 key 清零已生效的限制。
 
-Windows 使用 `gradlew.bat`。CI 在 push/PR 执行上述任务，并保存报告和 Debug APK。Release 为混淆构建，发布签名由正式项目提供。Robolectric 不能替代真实厂商桌面/负一屏和真实设备上的窗口可见性联调。
-
-### 12.3 验证宿主的使用
-
-首次默认推荐频道且云配关闭。进入开发面板启用开关，按首页搜索路径进入结果，再经过任意页面返回首页，观察 A。当天完成 AI 行为后 B 被日额度拦截；前进测试时钟 24h，再回 AI 频道无需新行为即可评估 B。
-
-调试时间不持久化，但展示时间持久化；使用未来测试时间后直接重启，会出现记录在未来的回拨阻断。独立测试组之间显式清空状态，避免误诊。Debug 包名带 `.debug`，与 Release 数据隔离。
-
-### 12.4 修改规则时的检查点
-
-| 要改的内容 | 主要位置 | 必须一起检查 |
+| 键 | 类型 / 初始值 | 含义 |
 |---|---|---|
-| 新行为或合法路径 | Behavior、PageKind、EntryPoint、Tracker | Codec 枚举兼容、页面事件接入、路径测试 |
-| 展示频道范围/优先级 | Surface 映射、GuidePolicy.candidates | HostSnapshot 与候选测试 |
-| 冷却/次数 | GuidePolicy、GuideState.exhausted | 定时刷新、现有记录兼容、边界测试 |
-| 存储后端 | StringStateStore 实现 | 写入失败契约、备份排除、单实例约束 |
-| 首帧计数口径 | Dialog/Host 回调契约 | 幂等、未绘制关闭、崩溃窗口、UI 测试 |
-| 恢复策略 | Controller 初始化及 fault 分支 | 不伪造次数、不静默丢历史、迁移方案 |
-| 正式路由 | app 的导航适配层 | 来源可信、复用 Intent、失败转场、重复上报 |
+| `a_show_count` | Int / 0 | A 已展示次数 |
+| `a_last_shown_at` | Long / 0 | A 上次展示的毫秒时间戳 |
+| `a_stopped` | Boolean / false | 是否点过 A 任意添加按钮 |
+| `b_show_count` | Int / 0 | B 已展示次数 |
+| `b_last_shown_at` | Long / 0 | B 上次展示的毫秒时间戳 |
+| `b_stopped` | Boolean / false | 是否点过 B 任意添加按钮 |
+| `last_any_shown_at` | Long / 0 | A/B 最近一次展示时间，用于共享自然日额度 |
 
-## 13. 推荐阅读顺序和关联文档
+不存页面列表、来源页面 ID、搜索资格、资讯资格、待弹任务或冷却计时器。退出登录、配置变化、设置入口点击不重置记录。清除应用全部数据后，记录消失，按初始状态重新计算。
 
-先读本文第 2、4 节明确规则与 Navigation，再读 `GuideModels.kt`、`GuideBehaviorTracker.kt`、`GuidePolicy.kt`。随后读 `WidgetGuideController.kt` 理解状态变化，再看 storage 与 ui。最后用 app 的接入及 49 个测试验证理解。
+一次展示更新该类型次数、该类型时间和共享时间。SP 使用同一次 Editor 写入；MMKV 可将七个字段编码为一条小记录统一写入。管理器为单进程单实例，主线程串行处理展示和点击，磁盘写入按产生顺序执行，避免旧展示写入覆盖新停止标志。
 
-- [README：运行入口与功能范围](../README.md)
-- [INTEGRATION：正式项目接入契约](INTEGRATION.md)
-- [ACCEPTANCE：设备操作与验收清单](ACCEPTANCE.md)
+展示记录写入失败不当成从未展示。简单处理是本进程暂停后续自动引导并记录错误；不增加预约记录、恢复任务或后台补弹。数据损坏不自动清零。磁盘与窗口无法形成原子事务，异常断电的边界见风险说明。
 
-仓库自写 Kotlin、测试、XML 和构建配置均有中文说明；官方 Gradle Wrapper 启动脚本及二进制保持原样，避免修改第三方生成代码。
+## 8. 一次展示尝试的顺序
+
+1. 入口收到属于当前等待关系的有效访问结果，消费本轮等待关系。
+2. 当前入口恢复后，取出并清空一次性返回结果。
+3. 核对页面及 tab 仍是规定展示位置。否则结束，不等用户切回来。
+4. 管理器检查开关、该类型停止标志、三次上限、共享自然日、该类型冷却。
+5. 宿主不能展示或已有弹窗占用则结束，不排队。
+6. 使用当前 Activity 展示 XML 底部 Dialog，窗口创建失败不计次。
+7. Dialog 本次 `onShow` 时记一次展示，同时更新类型时间和共享时间；重复通知不重复计次。
+
+判断和展示在主线程处理；管理器持有一个简单的“正在展示 / 处理展示”标记，拒绝第二个引导同时出现。此标记不持久化。项目已有统一弹窗管理器时，复用它的“当前能否展示”能力，立即展示或放弃，不加入延迟队列。
+
+以 Android 窗口成功显示的 `onShow` 为计次点，不承诺判断用户是否看清图片，不增加首帧跟踪系统。展示后取消或点击添加都不回滚次数。
+
+## 9. 弹窗 UI 与点击
+
+一个 XML 布局供 A、B 复用：引导标题、组件截图、横向左右两个按钮。A/B 只替换文案、截图与链接。
+
+| 控件 / 行为 | 处理 |
+|---|---|
+| 左“添加到桌面” | 先停止当前类型，再尝试对应桌面添加 deeplink |
+| 右“添加到负一屏” | 先停止当前类型，再尝试对应负一屏添加 deeplink |
+| 空白取消 | 关闭，保留展示次数，不写停止标志 |
+| 系统返回关闭弹窗 | 与空白取消一致 |
+| deeplink 失败 | 提示无法打开；该类型仍永久停止，不恢复 |
+
+点击添加后，先在内存停止对应类型，禁用两个按钮，按顺序持久化停止标志，再尝试 deeplink。SP 采用 `commit()` 校验结果时，在 IO 线程执行，不阻塞主线程。写入失败时本进程仍保持停止并记录错误；跨进程持久保证受存储故障限制。跳转前还需确认原宿主存活，不从已销毁 Activity 强行发起页面。
+
+不检测组件是否真的添加成功，不等待快服务添加结果，不查询桌面组件状态。点击 A 不改 B 的停止标志，点击 B 不改 A；本次展示已经占用的当天额度仍有效。
+
+Dialog 由当前 Activity 持有，宿主停止时关闭并清理引用。已关闭的引导不会因旋转、进程恢复或再次回前台自动重建。此取舍符合不保留旧机会的要求。
+
+## 10. 设置入口单独处理
+
+设置列表构造时调用项目已有荣耀设备判断方法。荣耀显示“添加桌面组件”，非荣耀隐藏。没有设备工具时集中实现，并用目标荣耀机型验证，不把判断散落在页面里。
+
+点击 item 直接调用现有 deeplink 能力，不调用 `WidgetGuideManager`，不改 A/B 次数、时间、停止标志。自动引导不受这个荣耀判断限制。
+
+产品需提供 A/B 标题和截图、A/B 各两个添加链接，以及设置入口链接。使用项目现有配置 / 路由来源，本文不编造生产地址。
+
+## 11. ARouter 与 thenAccept
+
+ARouter 可保留，使用 requestCode 重载接收页面返回结果。`onArrival` 是路由启动回调，不是用户返回回调，不能在那里弹引导。
+
+原生 `startActivityForResult()` 返回 `void`；`thenAccept` 属于项目或库的 Future / Promise 封装。如果现有封装在对应页面结果返回时完成，可以沿用这种回调外形，仍须检查访问标记并消费本轮返回。不能给原生调用直接接 `.thenAccept`，也不能凭方法名认定封装完成时机正确。
+
+当前工程 ARouter 1.5.2，示例用 `navigation(activity, requestCode)` 和 `onActivityResult`。Android 官方推荐 Activity Result API；项目以后统一升级返回封装时可迁移。这次引导不以迁移整个导航框架为前提，也不引用 ARouter 最新开发分支才有的接口。
+
+## 12. 实施次序
+
+1. 定义返回协议，接通首页 → 激活页 → 结果页 → 原栈返回。
+2. 用同一协议接通直达结果、我的工具、扫一扫、首页 AI、AI 二级列表。
+3. 编写管理器与 SP/MMKV 存储，频次判断用纯函数方便单测。
+4. 接入复用 XML 弹窗，`onShow` 记次，添加点击停止对应类型。
+5. 增加荣耀设备设置入口，只调用 deeplink。
+6. 实施测试和真机验收，替换废弃代码；旧测试不作为新规则通过依据。
+
+以上为后续实施计划，本次只重写文档。代码接入见 [INTEGRATION.md](INTEGRATION.md)，单测和风险见 [ACCEPTANCE.md](ACCEPTANCE.md)。
+
+## 13. 官方依据
+
+- [Android 返回结果说明](https://developer.android.com/training/basics/intents/result)：返回 API 与 AndroidX 推荐用法。
+- [Android Activity API](https://developer.android.com/reference/android/app/Activity)：`setResult`、`finish`、`onActivityResult`、恢复回调。
+- [ARouter 1.5.2 Postcard 源码](https://github.com/alibaba/ARouter/blob/1.5.2/arouter-api/src/main/java/com/alibaba/android/arouter/facade/Postcard.java)：本方案使用的 requestCode 重载。
+- [Android ViewModel](https://developer.android.com/topic/libraries/architecture/viewmodel)：普通 ViewModel 的生命周期。
+- [SharedPreferences.Editor](https://developer.android.com/reference/android/content/SharedPreferences.Editor) 与 [MMKV Android 用法](https://github.com/Tencent/MMKV/wiki/android_tutorial)：本地持久化 API。
+
+技术依据解释 API，业务规则以本文为准。
