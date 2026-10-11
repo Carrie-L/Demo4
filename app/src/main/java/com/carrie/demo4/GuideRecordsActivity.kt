@@ -55,6 +55,10 @@ class GuideRecordsActivity : AppCompatActivity() { // 仅 Debug 可从配置页�
                     appendLine("A/B 共享最近展示：${readable(record.lastAnyShownAtMillis)}") // 同一自然日最多展示一次。
                 } // 解释当前快照结束。
                 parsed.onFailure { appendLine("记录校验失败：${it.message.orEmpty()}") } // 损坏时保留原始键供排查。
+                appendLine() // 分隔持久数据与临时链路日志。
+                appendLine("最近事件（仅当前进程，最多 120 条，最早在上）：") // 重启后事件清空但 SP 仍保留。
+                app.recentGuideEvents().forEach { appendLine(it) } // 包括路由、回调、位置、频控与写盘事件。
+                appendLine("Logcat：adb logcat -s ${GuideApplication.GUIDE_LOG_TAG}:D '*:S'") // 提供与页面同内容的筛选命令。
             } // 状态文本组装结束。
             binding.recordText.text = output // 显示最新读盘结果。
         } // 读盘协程结束。

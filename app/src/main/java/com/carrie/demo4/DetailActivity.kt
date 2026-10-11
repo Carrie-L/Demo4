@@ -32,6 +32,7 @@ class DetailActivity : AppCompatActivity() { // 页面结束只能沿原栈 fini
         val decoded = runCatching { DemoPage.valueOf(intent.getStringExtra("pageKind").orEmpty()) }.getOrNull() // 校验内部路由。
         if (decoded == null) { finish(); return } // 错误目标没有引导资格。
         page = decoded // 使用校验后的实际目标。
+        app.recordGuideEvent("page.created kind=${page.name} selectedTab=${intent.getStringExtra("selectedTab") ?: "none"}") // 记录真实落点类型，不记录用户搜索内容。
         selectedToolTab = savedInstanceState?.getString("selectedToolTab") ?: intent.getStringExtra("selectedTab") ?: "bookmarks" // 恢复书签/历史 tab。
         binding = ActivityDetailBinding.inflate(layoutInflater) // 加载复用 XML。
         setContentView(binding.root) // 显示当前业务页。
@@ -94,7 +95,7 @@ class DetailActivity : AppCompatActivity() { // 页面结束只能沿原栈 fini
     } // AI 二级资讯打开结束。
 
     private fun clearWaiting(code: Int) { // 路由失败不能卡住下一次点击。
-        runOnUiThread { if (state.waitingRequestCode == code) state.waitingRequestCode = null } // 只清对应在途请求。
+        runOnUiThread { if (state.waitingRequestCode == code) { state.waitingRequestCode = null; app.recordGuideEvent("page.route_failed kind=${page.name} requestCode=$code waiting_cleared=true") } } // 只清对应在途请求。
     } // 失败清理结束。
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) { // 由 Android 按原调用关系送回。
@@ -113,6 +114,7 @@ class DetailActivity : AppCompatActivity() { // 页面结束只能沿原栈 fini
     private fun prepareSearchResult() { // 激活页只传递访问过结果这一事实。
         outgoingResult.putExtra(GuideResultContract.EXTRA_VISIT, GuideResultContract.SEARCH_RESULTS) // 不把游戏或视频当结果。
         setResult(Activity.RESULT_OK, outgoingResult) // 此时不 finish，等用户正常返回首页。
+        app.recordGuideEvent("page.result_prepared kind=SEARCH_ACTIVATION marker=${GuideResultContract.SEARCH_RESULTS} source=child_result") // 搜索激活页向首页逐级传递。
     } // 搜索中转结束。
 
     override fun onPostResume() { // 确认关键页面真的显示过。
@@ -128,7 +130,9 @@ class DetailActivity : AppCompatActivity() { // 页面结束只能沿原栈 fini
         if (marker != null) { // 真正进入关键页后准备返回数据。
             outgoingResult.putExtra(GuideResultContract.EXTRA_VISIT, marker) // 只追加引导字段。
             setResult(if (page == DemoPage.SCANNER) Activity.RESULT_CANCELED else Activity.RESULT_OK, outgoingResult) // 扫码取消也保留访问事实。
+            app.recordGuideEvent("page.result_prepared kind=${page.name} marker=$marker resultCode=${if (page == DemoPage.SCANNER) Activity.RESULT_CANCELED else Activity.RESULT_OK}") // 确认关键页实际准备好返回标记。
         } // 返回数据准备结束。
+        else if (page == DemoPage.SEARCH_ACTIVATION || page == DemoPage.AI_SECONDARY || page == DemoPage.GAME || page == DemoPage.VIDEO) app.recordGuideEvent("page.resumed kind=${page.name} direct_marker=none") // 这些页面单独返回不会冒充关键页。
         consumeAiIfReady() // 只有二级列表有待处理资讯结果时才检查。
     } // 页面恢复结束。
 
@@ -149,6 +153,7 @@ class DetailActivity : AppCompatActivity() { // 页面结束只能沿原栈 fini
     ) // 二级页 B 内容结束。
 
     override fun onStop() { // 离开二级页立即丢弃本轮未消费结果。
+        if (pendingAiReturn || state.waitingRequestCode != null) app.recordGuideEvent("page.stopped kind=${page.name} pendingAiDropped=$pendingAiReturn waiting=${state.waitingRequestCode}") // 业务跳转期间等待关系仍在内存。
         pendingAiReturn = false // 后台恢复不能突然弹窗。
         app.guideManager.dismissForOwner(this) // 本页 Dialog 不在恢复后重建。
         super.onStop() // 完成系统生命周期回调。

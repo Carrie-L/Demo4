@@ -102,6 +102,8 @@
 
 开发验证面板先打开自动弹窗并点“应用云配”，随后点“查看弹窗本地数据”。第一次使用时原始键值为空属于正常现象。返回首页后完成新的搜索结果访问并沿原栈返回；弹窗显示后再进入记录页，检查 `common_tools_widget_show_count = 1`、对应时间和 `last_any_widget_guide_shown_at_millis`。首页次数文字在 SP 提交成功后刷新。若没有弹窗，记录页首行会指出最后到达的返回链路节点或频控拒绝原因；没有收到结果回调时，首行停留在“打开 ... 等待返回”，可据此检查业务页的 result 与路由 requestCode。打开该记录页不会清除任何数据或消耗展示次数；按钮可手动重新读盘。
 
+下方“最近事件”列出本进程最多 120 条带序号的日志：`route.request`、`route.arrived`、`page.result_prepared`、首页或二级页的 `收到返回`、`guide.attempt`、`guide.policy_input`、`guide.dialog_on_show`、`guide.persist_show_start`、`已显示并写入 SP`。如果时间线停在某节点，可直接定位丢失的回调；频控拒绝会给出实际次数、时间和剩余间隔。Logcat 也可运行 `adb logcat -s WidgetGuideTrace:D '*:S'` 查看同一批事件。日志只包含页面类型、请求码、规则与次数，不输出搜索词或完整 deeplink；记录页直接读 SP 的原始值，进程日志不会持久化。
+
 1. 使用独立测试数据，开云配，完成一次搜索返回，确认 A 出现在首页非 AI tab 底部。
 2. 当天访问 AI 资讯并返回，确认 B 被共享日限制挡住；推进测试日期后静留页面仍不弹，再次访问返回才检查 B。
 3. 清理测试数据后分别验证工具、扫一扫、AI 二级列表路径。AI 二级列表返回时即可弹 B，AI 搜不弹。

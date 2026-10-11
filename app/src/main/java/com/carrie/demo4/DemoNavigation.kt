@@ -11,18 +11,20 @@ import com.alibaba.android.arouter.launcher.ARouter // 保留项目原有跳转�
 
 /** 相关页面通过 ARouter 打开，绝不为了返回再 startActivity(Main)。 */
 object DemoNavigation { // Demo 单处封装路由地址。
+    private fun trace(activity: Activity, event: String) { (activity.application as? GuideApplication)?.recordGuideEvent(event) } // 只记录页面类型和请求码，不记录搜索词或 deeplink 参数。
     fun settings(activity: Activity) { ARouter.getInstance().build("/settings/main").navigation(activity) } // 我的设置页。
     fun debug(activity: Activity) { ARouter.getInstance().build("/debug/guide").navigation(activity) } // Debug 配置面板。
     fun records(activity: Activity) { ARouter.getInstance().build("/debug/guide-records").navigation(activity) } // 查看真实本地频次键值。
     fun page(activity: Activity, kind: DemoPage, requestCode: Int? = null, selectedTab: String? = null, onFailure: () -> Unit = {}) { // 入口可请求 Android 结果。
+        trace(activity, "route.request page=${kind.name} requestCode=$requestCode source=${activity.javaClass.simpleName} tab=$selectedTab") // 记录导航请求与返回关联。
         val route = ARouter.getInstance().build("/browser/page").withString("pageKind", kind.name) // 实际打开的页面类型。
         if (selectedTab != null) route.withString("selectedTab", selectedTab) // 书签和历史复用同一工具页。
         if (requestCode == null) route.navigation(activity) // 普通中间页不需要回传。
         else route.navigation(activity, requestCode, object : NavigationCallback { // 相关入口请求结果。
-            override fun onFound(postcard: Postcard?) {} // 找到路由不代表用户已访问关键页。
-            override fun onLost(postcard: Postcard?) { onFailure() } // 路由失败清除等待状态。
-            override fun onArrival(postcard: Postcard?) {} // 到达路由回调不能触发弹窗。
-            override fun onInterrupt(postcard: Postcard?) { onFailure() } // 拦截导航同样清理等待。
+            override fun onFound(postcard: Postcard?) { trace(activity, "route.found page=${kind.name} requestCode=$requestCode") } // 路由存在不代表已访问关键页。
+            override fun onLost(postcard: Postcard?) { trace(activity, "route.lost page=${kind.name} requestCode=$requestCode"); onFailure() } // 路由失败清除等待状态。
+            override fun onArrival(postcard: Postcard?) { trace(activity, "route.arrived page=${kind.name} requestCode=$requestCode") } // 到达路由不能触发弹窗。
+            override fun onInterrupt(postcard: Postcard?) { trace(activity, "route.interrupted page=${kind.name} requestCode=$requestCode"); onFailure() } // 拦截导航同样清理等待。
         }) // ARouter 的结果启动结束。
     } // 通用业务页导航结束。
 
@@ -33,13 +35,15 @@ object DemoNavigation { // Demo 单处封装路由地址。
             "demo4://news/detail" -> DemoPage.NEWS_DETAIL // 普通资讯不回传搜索标记。
             else -> null // 不认识的 deeplink 不创造访问结果。
         } // deeplink 分流结束。
+        trace(activity, "highlight.resolved destination=${destination?.name ?: "unsupported"}") // 不打印高亮词和完整链接。
         if (destination == null) onFailure() // 解析失败时释放入口等待。
         else page(activity, destination, GuideResultContract.HOME_SEARCH, onFailure = onFailure) // 始终按实际页面标记验证。
     } // 暗词导航结束。
 
     fun openAdd(activity: Activity, deeplink: String): Boolean { // 弹窗和设置页共用添加页分发。
         val uri = Uri.parse(deeplink) // 从产品提供的链接解析目标。
-        if (uri.scheme != "demo4" || uri.host != "guide" || uri.path != "/widget/add") return false // Demo 只接受已实现链接。
+        if (uri.scheme != "demo4" || uri.host != "guide" || uri.path != "/widget/add") { trace(activity, "add.route_invalid"); return false } // Demo 只接受已实现链接。
+        trace(activity, "add.route_requested source=${activity.javaClass.simpleName} target=${uri.getQueryParameter("target")}") // 记录目标类别，不记录完整链接。
         ARouter.getInstance().build("/widget/add") // 不请求结果，不查询组件添加状态。
             .withString("type", uri.getQueryParameter("type") ?: "choose") // 演示组件类型。
             .withString("target", uri.getQueryParameter("target") ?: "choose") // 演示桌面或负一屏。

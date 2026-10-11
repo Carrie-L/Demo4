@@ -28,10 +28,10 @@ class MainActivity : AppCompatActivity() { // 冷启没有 pendingReturn，不�
         binding = ActivityMainBinding.inflate(layoutInflater) // 加载 Kotlin + XML 页面。
         setContentView(binding.root) // 显示主页面。
         binding.root.applySystemInsets() // 适配状态栏和导航栏。
-        binding.homeTab.setOnClickListener { mine = false; pendingReturn = null; renderLocation() } // 切回首页不补弹。
-        binding.mineTab.setOnClickListener { mine = true; pendingReturn = null; renderLocation() } // 切到我的不补弹。
+        binding.homeTab.setOnClickListener { mine = false; pendingReturn = null; app.recordGuideEvent("home.tab_selected tab=home channel=$channel pending_cleared=true"); renderLocation() } // 切回首页不补弹。
+        binding.mineTab.setOnClickListener { mine = true; pendingReturn = null; app.recordGuideEvent("home.tab_selected tab=mine pending_cleared=true"); renderLocation() } // 切到我的不补弹。
         listOf(binding.recommendChannel, binding.aiChannel, binding.sportsChannel, binding.localChannel) // 四个顶部频道。
-            .forEachIndexed { index, button -> button.setOnClickListener { channel = index; pendingReturn = null; renderLocation() } } // 切 tab 丢弃过期结果。
+            .forEachIndexed { index, button -> button.setOnClickListener { channel = index; pendingReturn = null; app.recordGuideEvent("home.channel_selected channel=$channel pending_cleared=true"); renderLocation() } } // 切 tab 丢弃过期结果。
         binding.searchBox.setOnClickListener { open(DemoPage.SEARCH_ACTIVATION, GuideResultContract.HOME_SEARCH) } // 搜索框到激活页。
         binding.directSearch.setOnClickListener { open(DemoPage.SEARCH_RESULTS, GuideResultContract.HOME_SEARCH) } // 搜索按钮到结果页。
         binding.highlightKeyword.setOnClickListener { // 暗词根据实际 deeplink 决定落点。
@@ -54,10 +54,11 @@ class MainActivity : AppCompatActivity() { // 冷启没有 pendingReturn，不�
         binding.guideStatus.visibility = if (BuildConfig.DEBUG) View.VISIBLE else View.GONE // Debug 才显示次数。
         binding.debugPanel.setOnClickListener { DemoNavigation.debug(this) } // 配置与时钟调试。
         renderLocation() // 初始推荐 tab 只画 UI，不检查弹窗。
+        app.recordGuideEvent("home.created tab=${if (mine) "mine" else "home"} channel=$channel pending=false") // 冷启和重建均没有旧行为资格。
     } // 主页面创建结束。
 
     private fun clearWaiting(code: Int) { // 路由失败时释放当前等待关系。
-        runOnUiThread { if (guideReturn.waitingRequestCode == code) guideReturn.waitingRequestCode = null } // 异步回调也回主线程。
+        runOnUiThread { if (guideReturn.waitingRequestCode == code) { guideReturn.waitingRequestCode = null; app.recordGuideEvent("home.route_failed waiting_cleared requestCode=$code") } } // 异步回调也回主线程。
     } // 路由失败处理结束。
 
     private fun open(kind: DemoPage, code: Int, tab: String? = null) { // 相关页面共用一套启动方式。
@@ -91,12 +92,14 @@ class MainActivity : AppCompatActivity() { // 冷启没有 pendingReturn，不�
         val expected = GuideResultContract.expectedVisit(requestCode) ?: return // 未知请求码不做引导。
         if (marker != expected) { app.recordGuideEvent("首页不弹：需要访问 $expected，实际返回 $marker"); return } // 实际落点必须正确。
         pendingReturn = requestCode // 只交给本次紧邻的恢复阶段。
+        app.recordGuideEvent("home.result_valid requestCode=$requestCode resumedForGuide=$resumedForGuide tab=${if (mine) "mine" else "home"} channel=$channel") // 区分等待恢复与立即消费。
         consumePendingIfReady() // 若已经恢复，立即处理；否则等 onPostResume。
     } // 返回结果处理结束。
 
     override fun onPostResume() { // 可能先收到结果，后完成宿主恢复。
         super.onPostResume() // 确保系统恢复回调完成。
         resumedForGuide = true // 有些设备在此阶段才交付 Activity 结果。
+        if (pendingReturn != null || guideReturn.waitingRequestCode != null) app.recordGuideEvent("home.post_resume pending=$pendingReturn waiting=${guideReturn.waitingRequestCode} channel=$channel mine=$mine") // 只记录相关链路的恢复节点。
         consumePendingIfReady() // 冷启没有 pending，不会调用管理器。
         refreshDebugStatus() // 仅刷新可见诊断文字，不触发引导。
     } // 页面恢复完成。
@@ -105,7 +108,7 @@ class MainActivity : AppCompatActivity() { // 冷启没有 pendingReturn，不�
         if (!resumedForGuide) return // 尚不可展示时留给紧接的恢复。
         val request = pendingReturn ?: return // 没有此轮回传，直接结束。
         pendingReturn = null // 频次未到也不保留行为资格。
-        if (!isExpectedLocation(request)) { app.recordGuideEvent("首页不弹：返回时入口 tab 已改变或页面不可见"); return } // 入口 tab 不匹配就放弃。
+        if (!isExpectedLocation(request)) { app.recordGuideEvent("home.location_rejected requestCode=$request mine=$mine channel=$channel resumed=$resumedForGuide finishing=$isFinishing destroyed=$isDestroyed"); return } // 入口 tab 不匹配就放弃。
         val type = if (request == GuideResultContract.HOME_AI_DETAIL) GuideType.AI_QUICK_NEWS else GuideType.COMMON_TOOLS // 只按本入口决定类型。
         app.recordGuideEvent("首页返回有效：${type.name}，开始检查配置和本地频次") // 供本地记录页判断链路是否到达管理器。
         app.guideManager.tryShow(this, type, content(type), { isExpectedLocation(request) }, DemoNavigation::openAdd) { refreshDebugStatus() } // 落盘成功后更新首页计数。
@@ -144,12 +147,14 @@ class MainActivity : AppCompatActivity() { // 冷启没有 pendingReturn，不�
     } // 状态渲染结束。
 
     override fun onStop() { // 离开原宿主时丢弃未消费结果。
+        if (pendingReturn != null || guideReturn.waitingRequestCode != null) app.recordGuideEvent("home.stopped pending_dropped=$pendingReturn waiting=${guideReturn.waitingRequestCode}") // 业务页打开时等待码仍保留，本轮 pending 必须丢弃。
         pendingReturn = null // 后台再回来不能凭旧结果弹窗。
         app.guideManager.dismissForOwner(this) // 关闭当前宿主正在显示的底部 Dialog。
         super.onStop() // 完成系统生命周期回调。
     } // 宿主离开结束。
 
     override fun onPause() { // 离开页面后异步读盘不能再打开弹窗。
+        if (pendingReturn != null) app.recordGuideEvent("home.paused pending=$pendingReturn") // 诊断快速离开导致的资格丢弃。
         resumedForGuide = false // 当前宿主已不适合展示。
         super.onPause() // 保留系统暂停派发。
     } // 暂停处理结束。

@@ -47,20 +47,23 @@ class WidgetGuideManager( // 应用进程只创建一个实例。
         openDeeplink: (Activity, String) -> Boolean, // 用户点击添加后调用的现有跳转。
         onRecorded: () -> Unit = {} // 成功写入展示记录后通知宿主刷新计数。
     ) { // 被拦截后直接丢弃这轮返回结果。
+        onDiagnostic("guide.attempt type=${type.name} owner=${activity.javaClass.simpleName} busy=$busy paused=$paused") // 每轮有效返回都可在时间线上看到入口。
         if (busy || paused) { onDiagnostic("自动引导未检查：${if (paused) "本进程存储故障暂停" else "已有弹窗或写入正在处理"}"); return } // 不排队，也不补弹。
         busy = true // 先锁定本轮，避免磁盘读取期间同时收到第二次返回。
         scope.launch { // 回到主线程后再复核宿主。
             try { // 读写异常一律禁止误弹。
+                onDiagnostic("guide.history_read source=${if (record == null) "sp" else "memory"} type=${type.name}") // 判断本次数据来自真实读盘还是进程缓存。
                 val history = record ?: store.read().also { record = it } // 首次读取 SP，后续用本进程快照。
                 val now = currentTimeMillis() // 频次判断与本次展示用同一时钟来源。
                 val rules = currentRules() // 获取此次返回使用的配置。
+                onDiagnostic("guide.policy_input type=${type.name} enabled=${rules.enable} count=${if (type == GuideType.COMMON_TOOLS) history.commonTools.showCount else history.aiQuickNews.showCount} stopped=${if (type == GuideType.COMMON_TOOLS) history.commonTools.stopped else history.aiQuickNews.stopped} lastOwn=${if (type == GuideType.COMMON_TOOLS) history.commonTools.lastShownAtMillis else history.aiQuickNews.lastShownAtMillis} lastAny=${history.lastAnyShownAtMillis} now=$now") // 不记录搜索词，仅记录决策必要字段。
                 if (!canDisplayHere() || activity.isFinishing || activity.isDestroyed) { // 异步读盘期间宿主可能已经离开。
                     onDiagnostic("${type.name} 未弹：页面或入口 tab 已不在前台") // 把丢弃原因留给调试页面。
                     busy = false // 解锁后也不留下待弹任务。
                     return@launch // 不在下次 onResume 重试。
                 } // 本轮有效性复核结束。
                 if (!GuidePolicy.canShow(type, rules, history, now, ZoneId.systemDefault())) { // 规则或次数可能阻止本轮展示。
-                    onDiagnostic("${type.name} 未弹：${policyBlockReason(type, rules, history)}；本类型次数=${if (type == GuideType.COMMON_TOOLS) history.commonTools.showCount else history.aiQuickNews.showCount}") // 保留频次判断原因。
+                    onDiagnostic("${type.name} 未弹：${policyBlockReason(type, rules, history, now)}；本类型次数=${if (type == GuideType.COMMON_TOOLS) history.commonTools.showCount else history.aiQuickNews.showCount}") // 保留频次判断原因。
                     busy = false // 释放正在检查的机会。
                     return@launch // 冷却后仍须重新完成页面行为。
                 } // 频控拒绝结束。
@@ -75,22 +78,26 @@ class WidgetGuideManager( // 应用进程只创建一个实例。
         } // 异步读取协程结束。
     } // 返回结果触发入口结束。
 
-    private fun policyBlockReason(type: GuideType, rules: GuideRules, history: GuideRecord): String { // 把频控分支翻译成可见诊断。
+    private fun policyBlockReason(type: GuideType, rules: GuideRules, history: GuideRecord, now: Long): String { // 使用同一次决策的时间解释频控拒绝。
         val own = if (type == GuideType.COMMON_TOOLS) history.commonTools else history.aiQuickNews // 获取此弹窗独立记录。
         if (!rules.enable) return "配置 enable 为 false" // 配置总开关拒绝。
         if (own.stopped) return "此组件已点击添加并永久停止" // 两类停止状态互不影响。
         if (own.showCount >= 3) return "此组件已达最多 3 次" // 不存在第四次。
+        if (now <= 0L || now < history.lastAnyShownAtMillis) return "测试时钟无效或早于共享展示时间 now=$now lastAny=${history.lastAnyShownAtMillis}" // 不把时钟倒退误认作新一天。
         if (history.lastAnyShownAtMillis > 0L) { // 检查共享本地自然日限额。
             val shownDate = java.time.Instant.ofEpochMilli(history.lastAnyShownAtMillis).atZone(ZoneId.systemDefault()).toLocalDate() // 最近一次展示日期。
-            val today = java.time.Instant.ofEpochMilli(currentTimeMillis()).atZone(ZoneId.systemDefault()).toLocalDate() // 使用当前测试时钟日期。
-            if (shownDate == today) return "A/B 今天已展示一次" // 本类型也受共享自然日限制。
+            val today = java.time.Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate() // 使用同一次频控判断的测试时间。
+            if (shownDate == today) return "A/B 在本地日期 $today 已展示一次" // 本类型也受共享自然日限制。
         } // 共享频控原因结束。
-        return "同类型 24 小时间隔未到、时钟倒退或记录异常" // 其它时间检查统一提示。
+        if (own.lastShownAtMillis <= 0L || now < own.lastShownAtMillis) return "本类型展示时间无效或时钟倒退 lastOwn=${own.lastShownAtMillis} now=$now" // 损坏记录保守拒绝。
+        val days = if (own.showCount == 1) rules.firstPopInterval else rules.secondPopInterval // 用本类型下一次所需间隔。
+        if (days == null || days < 0L || days > Long.MAX_VALUE / GuidePolicy.DAY_MILLIS) return "本类型间隔未配置或不合法 days=$days" // 坏配置不能放行。
+        return "本类型冷却未到 elapsed=${now - own.lastShownAtMillis}ms required=${days * GuidePolicy.DAY_MILLIS}ms" // 精确定位还差多久。
     } // 频控诊断结束。
 
     /** 宿主离开页面时关闭所属窗口，不保留展示资格。 */
     fun dismissForOwner(owner: Activity) { // Main 和二级列表在 onStop 调用。
-        if (activeOwner === owner) activeDialog?.dismiss() // 只关闭本宿主的弹窗。
+        if (activeOwner === owner) { onDiagnostic("guide.owner_stopped owner=${owner.javaClass.simpleName} dialog_dismissed=true"); activeDialog?.dismiss() } // 只关闭本宿主的弹窗。
     } // 关闭时的频次已经在 onShow 计入。
 
     /** Debug 面板读取次数时不触发任何弹窗。 */
@@ -102,6 +109,7 @@ class WidgetGuideManager( // 应用进程只创建一个实例。
         if (persisting) return false // 防止还在写入的旧记录覆盖清理。
         val success = store.clearForDebug() // 仅清引导频次文件。
         if (success) { record = GuideRecord(); paused = false; busy = false } // 恢复调试初态。
+        onDiagnostic("guide.debug_clear success=$success persisting=$persisting") // 记录主动重置后的真实落盘结果。
         return success // 把真实写入结果交给面板。
     } // 测试数据清理结束。
 
@@ -127,6 +135,7 @@ class WidgetGuideManager( // 应用进程只创建一个实例。
         dialog.setContentView(binding.root) // 使用相同 XML 展示两类引导。
         dialog.setCanceledOnTouchOutside(true) // 点击空白只取消，不设置停止标志。
         dialog.setOnDismissListener { // 取消、添加或宿主停止都会走这里。
+            onDiagnostic("guide.dialog_dismissed type=${type.name} counted=$counted clicked=$clicked persisting=$persisting") // 空白取消与点击添加可从日志区分。
             if (activeDialog === dialog) { activeDialog = null; activeOwner = null } // 清除 Activity 引用。
             if (!persisting) busy = false // 必要写入完成后才允许下一次尝试。
         } // 关闭监听结束。
@@ -134,12 +143,14 @@ class WidgetGuideManager( // 应用进程只创建一个实例。
             if (counted) return@setOnShowListener // 同一个窗口重复回调不能重复计数。
             counted = true // 本 Dialog 此后只能计一次。
             val now = currentTimeMillis() // 展示时刻是本类型冷却起点。
+            onDiagnostic("guide.dialog_on_show type=${type.name} at=$now") // 只有本节点发生后才可能增加次数。
             val before = checkNotNull(record) // 记录必须已成功读取。
             val own = if (type == GuideType.COMMON_TOOLS) before.commonTools else before.aiQuickNews // 取本类型计数。
             val updated = own.copy(showCount = own.showCount + 1, lastShownAtMillis = now) // 累加该类型一次。
             val after = if (type == GuideType.COMMON_TOOLS) before.copy(commonTools = updated, lastAnyShownAtMillis = now) // A 更新共享时间。
                         else before.copy(aiQuickNews = updated, lastAnyShownAtMillis = now) // B 更新共享时间。
             record = after // 先更新内存，后续尝试不会忽略本次展示。
+            onDiagnostic("guide.persist_show_start type=${type.name} count=${updated.showCount} at=$now") // 区分已经显示与已成功落盘。
             persisting = true // 取消时仍等待持久化完成。
             scope.launch { // 顺序完成这次展示记录。
                 try { // 存储失败要进入暂停状态。
@@ -153,9 +164,10 @@ class WidgetGuideManager( // 应用进程只创建一个实例。
                 } // 展示记录处理结束。
             } // 展示写入协程结束。
         } // 展示监听结束。
-        fun add(link: String) { // 两个添加按钮共用停止逻辑。
+        fun add(link: String, target: String) { // 两个添加按钮共用停止逻辑。
             if (!counted || persisting || clicked) return // 展示未保存或已处理则忽略连点。
             clicked = true // 立即防止另一个按钮重复触发。
+            onDiagnostic("guide.add_clicked type=${type.name} target=$target count=${checkNotNull(record).let { if (type == GuideType.COMMON_TOOLS) it.commonTools.showCount else it.aiQuickNews.showCount }}") // 只记录目标类别，不记录完整 deeplink。
             binding.addDesktop.isEnabled = false // 锁定左侧按钮。
             binding.addAssistant.isEnabled = false // 锁定右侧按钮。
             val before = checkNotNull(record) // 拿到最新的计数快照。
@@ -165,17 +177,18 @@ class WidgetGuideManager( // 应用进程只创建一个实例。
             persisting = true // 写停止标志期间保持 busy。
             scope.launch { // 先持久化，再打开快服务。
                 try { // 点击操作不依赖添加是否成功。
-                    if (!store.write(after)) { paused = true; Log.e("WidgetGuide", "Stop flag was not saved") } // 存储失败本进程继续停止。
-                } catch (error: Exception) { paused = true; Log.e("WidgetGuide", "Stop flag failed", error) } // 记录磁盘错误。
+                    if (!store.write(after)) { paused = true; onDiagnostic("guide.persist_stop_failed type=${type.name} target=$target"); Log.e("WidgetGuide", "Stop flag was not saved") } // 存储失败本进程继续停止。
+                    else onDiagnostic("guide.persist_stop_success type=${type.name} target=$target") // SP 已确认此类型永久停止。
+                } catch (error: Exception) { paused = true; onDiagnostic("guide.persist_stop_error type=${type.name} error=${error.javaClass.simpleName}"); Log.e("WidgetGuide", "Stop flag failed", error) } // 记录磁盘错误。
                 finally { persisting = false; dialog.dismiss() } // 关窗并释放对 Activity 的长期引用。
                 if (!activity.isFinishing && !activity.isDestroyed) { // 宿主存活才尝试跳转。
-                    try { if (!openDeeplink(activity, link)) Log.e("WidgetGuide", "Add deeplink unavailable") } // 失败仍已停止此类型。
-                    catch (error: Exception) { Log.e("WidgetGuide", "Add deeplink failed", error) } // 捕获路由异常。
+                    try { val opened = openDeeplink(activity, link); onDiagnostic("guide.add_navigation type=${type.name} target=$target requested=$opened"); if (!opened) Log.e("WidgetGuide", "Add deeplink unavailable") } // 失败仍已停止此类型。
+                    catch (error: Exception) { onDiagnostic("guide.add_navigation_error type=${type.name} target=$target error=${error.javaClass.simpleName}"); Log.e("WidgetGuide", "Add deeplink failed", error) } // 捕获路由异常。
                 } // 宿主检查结束。
             } // 停止写入与 deeplink 协程结束。
         } // 通用添加处理结束。
-        binding.addDesktop.setOnClickListener { add(content.desktopDeeplink) } // 左边添加到桌面。
-        binding.addAssistant.setOnClickListener { add(content.assistantDeeplink) } // 右边添加到负一屏。
+        binding.addDesktop.setOnClickListener { add(content.desktopDeeplink, "desktop") } // 左边添加到桌面。
+        binding.addAssistant.setOnClickListener { add(content.assistantDeeplink, "assistant") } // 右边添加到负一屏。
         if (!canDisplayHere() || activity.isFinishing || activity.isDestroyed) { onDiagnostic("${type.name} 未弹：显示前页面已经离开"); busy = false; return } // 展示前最后复核。
         activeDialog = dialog // 记录本次窗口用于宿主停止时关闭。
         activeOwner = activity // 只绑定当前原入口。

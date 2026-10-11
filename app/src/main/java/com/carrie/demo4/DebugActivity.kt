@@ -38,6 +38,7 @@ class DebugActivity : AppCompatActivity() { // 发布版立即退出。
             } else { // 两个间隔都合法。
                 app.rules = GuideRules(binding.enablePop.isChecked, first, second) // 更新进程内云配。
                 app.highlightDeeplink = if (binding.highlightToNews.isChecked) "demo4://news/detail" else "demo4://search/results" // 更新暗词实际落点。
+                app.recordGuideEvent("debug.config_applied enabled=${app.rules.enable} firstDays=$first secondDays=$second highlightToNews=${binding.highlightToNews.isChecked}") // 记录实际生效的配置而非仅开关 UI。
                 Toast.makeText(this, R.string.config_applied, Toast.LENGTH_SHORT).show() // 配置仅影响未来新返回。
             } // 配置校验结束。
         } // 应用配置监听结束。
